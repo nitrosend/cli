@@ -28,13 +28,25 @@ export function defaultApiUrl(): string {
 }
 
 export function configPath(): string {
-  if (process.env.NITROSEND_CONFIG_DIR) {
-    return join(process.env.NITROSEND_CONFIG_DIR, "profiles.json");
-  }
+  return join(configDir(), "profiles.json");
+}
 
+export function configDir(): string {
+  if (process.env.NITROSEND_CONFIG_DIR) {
+    return process.env.NITROSEND_CONFIG_DIR;
+  }
   const xdg = process.env.XDG_CONFIG_HOME;
   const base = xdg && xdg.length > 0 ? xdg : join(homedir(), ".config");
-  return join(base, "nitrosend", "profiles.json");
+  return join(base, "nitrosend");
+}
+
+export function cacheDir(): string {
+  if (process.env.NITROSEND_CACHE_DIR) {
+    return process.env.NITROSEND_CACHE_DIR;
+  }
+  const xdg = process.env.XDG_CACHE_HOME;
+  const base = xdg && xdg.length > 0 ? xdg : join(homedir(), ".cache");
+  return join(base, "nitrosend");
 }
 
 export async function loadConfig(path = configPath()): Promise<ConfigFile> {

@@ -52,6 +52,24 @@ nitrosend mcp prompts get campaign_brief --args '{"goal":"welcome series"}'
 Add `--json` to print machine-readable output. Upgrade notices are written only
 to stderr so JSON stdout remains parseable.
 
+## UX Contract
+
+The CLI uses descriptor-backed commands and stable `schema_version: 1` output
+envelopes. `--machine` implies `--json --non-interactive --no-color --no-pager`.
+Use `--explain` to inspect the command plan without performing side effects.
+
+Project defaults can live in `.nitrosend.yml`:
+
+```yaml
+profile: sandbox
+environment: sandbox
+output: json
+```
+
+Destructive actions require typed confirmation. `--yes` and non-interactive mode
+fail closed when typed confirmation is required. See `docs/ux-contract.md` for
+exit codes, dry-run behavior, performance budget, and command descriptor rules.
+
 ## CLI Upgrade Notices
 
 Nitrosend API responses may include:

@@ -10,15 +10,21 @@
   "files": [
     "dist",
     "!dist/**/*.test.*",
+    "schemas",
+    "docs",
     "README.md"
   ],
   "scripts": {
     "build": "tsc && node scripts/chmod-bin.mjs",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test 'dist/**/*.test.js' 'dist/*.test.js'",
+    "test": "npm run build && node scripts/run-tests.mjs",
     "lint": "npm run typecheck",
     "secret-scan": "node scripts/secret-scan.mjs",
+    "test:stdio-contract": "npm run build && node scripts/stdio-contract.mjs",
+    "test:dashboard-contract": "npm run build && node scripts/dashboard-contract.mjs",
+    "test:machine-contract": "npm run build && node scripts/machine-contract.mjs",
+    "test:perf-budget": "npm run build && node scripts/perf-budget.mjs",
     "prepare": "npm run build"
   },
   "engines": {

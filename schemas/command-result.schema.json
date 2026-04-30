@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nitrosend.com/cli/command-result-v1.json",
+  "type": "object",
+  "required": ["schema_version", "ok", "command", "data", "meta"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "ok": { "const": true },
+    "command": { "type": "string" },
+    "data": {},
+    "sidecars": { "type": "object" },
+    "meta": { "type": "object" },
+    "presentation": { "type": "object" }
+  }
+}

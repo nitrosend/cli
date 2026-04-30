@@ -47,5 +47,20 @@ export function flagBoolean(flags: ParsedArgs["flags"], name: string): boolean {
 }
 
 function isBooleanFlag(name: string): boolean {
-  return ["help", "version", "json", "no-browser"].includes(name);
+  return [
+    "help",
+    "version",
+    "json",
+    "ndjson",
+    "csv",
+    "no-browser",
+    "no-color",
+    "no-pager",
+    "non-interactive",
+    "machine",
+    "trace",
+    "dry-run",
+    "yes",
+    "explain"
+  ].includes(name);
 }

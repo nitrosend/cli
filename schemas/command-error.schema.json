@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nitrosend.com/cli/command-error-v1.json",
+  "type": "object",
+  "required": ["schema_version", "ok", "error", "meta"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "ok": { "const": false },
+    "command": { "type": "string" },
+    "error": {
+      "type": "object",
+      "required": ["code", "message", "retriable"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "blockers": { "type": "array", "items": { "type": "string" } },
+        "next_action": { "type": "string" },
+        "suggested_tool_call": {},
+        "retriable": { "type": "boolean" },
+        "doc_url": { "type": "string" }
+      }
+    },
+    "meta": { "type": "object" }
+  }
+}
