@@ -1,0 +1,31 @@
+{
+  "name": "@nitrosend/cli",
+  "version": "0.1.0",
+  "description": "Command-line interface for Nitrosend",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "nitrosend": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc && node scripts/chmod-bin.mjs",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test 'dist/**/*.test.js' 'dist/*.test.js'",
+    "lint": "npm run typecheck",
+    "secret-scan": "node scripts/secret-scan.mjs",
+    "prepare": "npm run build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.8.3"
+  }
+}
