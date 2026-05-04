@@ -41,6 +41,13 @@ export async function enforceSafety(
 
   if (options.confirm === expected) return;
 
+  if (options.confirm !== undefined) {
+    throw new CliError("Confirmation does not match expected target", {
+      code: "confirmation_mismatch_explicit",
+      exitCodeName: "usage"
+    });
+  }
+
   if (options.yes || options.nonInteractive) {
     throw new CliError(`Typed confirmation required: rerun with --confirm ${expected}`, {
       code: "typed_confirmation_required",
@@ -50,8 +57,18 @@ export async function enforceSafety(
     });
   }
 
+  const input = options.stdin ?? defaultStdin;
+  if ((input as NodeJS.ReadStream & { isTTY?: boolean }).isTTY !== true) {
+    throw new CliError(`Typed confirmation required: rerun with --confirm ${expected}`, {
+      code: "typed_confirmation_required",
+      exitCodeName: "permission",
+      blockers: ["This command cannot be approved with --yes or in non-interactive mode."],
+      nextAction: `Rerun with --confirm ${expected} after reviewing the dry-run preview.`
+    });
+  }
+
   const readline = createInterface({
-    input: options.stdin ?? defaultStdin,
+    input,
     output: options.stdout ?? defaultStdout
   });
   try {

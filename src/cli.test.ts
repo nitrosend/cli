@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -38,6 +38,95 @@ test("describe returns descriptor data", async () => {
   assert.equal(parsed.data.safety.class, "read");
 });
 
+test("mcp tools call descriptor is conservative proxy safety", async () => {
+  const io = streams();
+  const code = await runCli({ argv: ["describe", "mcp", "tools", "call", "--json"], stdout: io.stdout, stderr: io.stderr });
+
+  assert.equal(code, 0);
+  const parsed = JSON.parse(io.stdoutText);
+  assert.equal(parsed.data.name, "mcp tools call");
+  assert.equal(parsed.data.safety.class, "external-effect");
+  assert.match(parsed.data.agent.reason, /Proxy command/);
+});
+
+test("explain includes inferred wrapped MCP tool safety", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-explain-fallback-"));
+  const previous = process.env.NITROSEND_CONFIG_DIR;
+  process.env.NITROSEND_CONFIG_DIR = dir;
+  const io = streams();
+  try {
+    const code = await runCli({
+      argv: ["mcp", "tools", "call", "nitro_send_message", "--explain", "--json"],
+      stdout: io.stdout,
+      stderr: io.stderr
+    });
+
+    assert.equal(code, 0);
+    const parsed = JSON.parse(io.stdoutText);
+    assert.equal(parsed.data.wrapped_tool_safety.name, "nitro_send_message");
+    assert.equal(parsed.data.wrapped_tool_safety.safety_class, "external-effect");
+    assert.equal(parsed.data.wrapped_tool_safety.source, "name_pattern");
+  } finally {
+    if (previous === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("explain uses cached MCP tool annotations when credentials exist", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-explain-cache-"));
+  const previousConfig = process.env.NITROSEND_CONFIG_DIR;
+  const previousCache = process.env.NITROSEND_CACHE_DIR;
+  const previousFetch = globalThis.fetch;
+  process.env.NITROSEND_CONFIG_DIR = dir;
+  process.env.NITROSEND_CACHE_DIR = join(dir, "cache");
+
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "profiles.json"), JSON.stringify({
+    currentProfile: "default",
+    profiles: {
+      default: {
+        name: "default",
+        apiUrl: "https://api.example.test/mcp",
+        token: "nskey_test_abc123",
+        tokenType: "api_key"
+      }
+    }
+  }));
+
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    result: {
+      tools: [{
+        name: "nitro_send_message",
+        annotations: { destructiveHint: true, readOnlyHint: false }
+      }]
+    }
+  }), { status: 200 });
+
+  try {
+    const io = streams();
+    const code = await runCli({
+      argv: ["mcp", "tools", "call", "nitro_send_message", "--explain", "--json"],
+      stdout: io.stdout,
+      stderr: io.stderr
+    });
+
+    assert.equal(code, 0);
+    const parsed = JSON.parse(io.stdoutText);
+    assert.equal(parsed.data.wrapped_tool_safety.safety_class, "destructive");
+    assert.equal(parsed.data.wrapped_tool_safety.source, "tools_list_cache");
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousConfig === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previousConfig;
+    if (previousCache === undefined) delete process.env.NITROSEND_CACHE_DIR;
+    else process.env.NITROSEND_CACHE_DIR = previousCache;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("completion emits raw shell script in tty mode", async () => {
   const io = streams();
   const code = await runCli({ argv: ["completion", "bash"], stdout: io.stdout, stderr: io.stderr });
@@ -66,6 +155,230 @@ test("dashboard works without credentials", async () => {
     assert.equal(code, 0);
     const parsed = JSON.parse(io.stdoutText);
     assert.equal(parsed.command, "dashboard");
+  } finally {
+    if (previous === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("dashboard uses live MCP status when credentials exist", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-dashboard-live-"));
+  const previousConfig = process.env.NITROSEND_CONFIG_DIR;
+  const previousCache = process.env.NITROSEND_CACHE_DIR;
+  const previousFetch = globalThis.fetch;
+  process.env.NITROSEND_CONFIG_DIR = dir;
+  process.env.NITROSEND_CACHE_DIR = join(dir, "cache");
+
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "profiles.json"), JSON.stringify({
+    currentProfile: "default",
+    profiles: {
+      default: {
+        name: "default",
+        apiUrl: "https://api.example.test/mcp",
+        token: "nskey_test_abc123",
+        tokenType: "api_key"
+      }
+    }
+  }));
+
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    result: {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          result: {
+            account: { tier: "free", can_send: true, using_sandbox: true },
+            onboarding: { first_send: { completed: false } },
+            provider: { name: "mailgun", configured: false },
+            billing: { tier: "free" }
+          }
+        })
+      }]
+    }
+  }), { status: 200 });
+
+  try {
+    const io = streams();
+    const code = await runCli({ argv: ["--json"], stdout: io.stdout, stderr: io.stderr });
+    assert.equal(code, 0);
+    const parsed = JSON.parse(io.stdoutText);
+    assert.equal(parsed.data.status_source, "live");
+    assert.equal(parsed.data.onboarding.first_send, false);
+    assert.ok(parsed.sidecars.blockers.includes("first_send is not completed"));
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousConfig === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previousConfig;
+    if (previousCache === undefined) delete process.env.NITROSEND_CACHE_DIR;
+    else process.env.NITROSEND_CACHE_DIR = previousCache;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("status command returns parsed MCP status", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-status-"));
+  const previousConfig = process.env.NITROSEND_CONFIG_DIR;
+  const previousFetch = globalThis.fetch;
+  process.env.NITROSEND_CONFIG_DIR = dir;
+
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "profiles.json"), JSON.stringify({
+    currentProfile: "default",
+    profiles: {
+      default: {
+        name: "default",
+        apiUrl: "https://api.example.test/mcp",
+        token: "nskey_test_abc123",
+        tokenType: "api_key"
+      }
+    }
+  }));
+
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    result: {
+      content: [{ type: "text", text: JSON.stringify({ result: { status: "ready" } }) }]
+    }
+  }), { status: 200 });
+
+  try {
+    const io = streams();
+    const code = await runCli({ argv: ["status", "--json"], stdout: io.stdout, stderr: io.stderr });
+    assert.equal(code, 0);
+    const parsed = JSON.parse(io.stdoutText);
+    assert.equal(parsed.command, "status");
+    assert.equal(parsed.data.status, "ready");
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousConfig === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previousConfig;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("entity list commands call nitro_query and render rows", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-flows-list-"));
+  const previousConfig = process.env.NITROSEND_CONFIG_DIR;
+  const previousFetch = globalThis.fetch;
+  process.env.NITROSEND_CONFIG_DIR = dir;
+
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "profiles.json"), JSON.stringify({
+    currentProfile: "default",
+    profiles: {
+      default: {
+        name: "default",
+        apiUrl: "https://api.example.test/mcp",
+        token: "nskey_test_abc123",
+        tokenType: "api_key"
+      }
+    }
+  }));
+
+  let requestBody = "";
+  globalThis.fetch = async (_url, init) => {
+    requestBody = String(init?.body);
+    return new Response(JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            result: {
+              items: [{ id: 1, name: "Welcome", status: "draft" }],
+              pagination: { page: 1, per: 10, total: 1 }
+            }
+          })
+        }]
+      }
+    }), { status: 200 });
+  };
+
+  try {
+    const io = streams();
+    const code = await runCli({
+      argv: ["flows", "list", "--status", "draft", "--per", "10", "--json"],
+      stdout: io.stdout,
+      stderr: io.stderr
+    });
+    assert.equal(code, 0);
+    const parsed = JSON.parse(io.stdoutText);
+    assert.equal(parsed.command, "flows list");
+    assert.equal(parsed.data.rows[0].name, "Welcome");
+    const body = JSON.parse(requestBody);
+    assert.equal(body.params.name, "nitro_query");
+    assert.deepEqual(body.params.arguments.filters, { status: "draft" });
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousConfig === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previousConfig;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("version and update commands provide release guidance", async () => {
+  const versionIo = streams();
+  const versionCode = await runCli({ argv: ["version", "--json"], stdout: versionIo.stdout, stderr: versionIo.stderr });
+  assert.equal(versionCode, 0);
+  const version = JSON.parse(versionIo.stdoutText);
+  assert.equal(version.data.package, "@nitrosend/cli");
+  assert.ok(version.data.update_command.includes("@nitrosend/cli@latest"));
+
+  const rawIo = streams();
+  const rawCode = await runCli({ argv: ["--version"], stdout: rawIo.stdout, stderr: rawIo.stderr });
+  assert.equal(rawCode, 0);
+  assert.match(rawIo.stdoutText, /^\d+\.\d+\.\d+/);
+
+  const updateIo = streams();
+  const updateCode = await runCli({ argv: ["update", "--json"], stdout: updateIo.stdout, stderr: updateIo.stderr });
+  assert.equal(updateCode, 0);
+  const update = JSON.parse(updateIo.stdoutText);
+  assert.equal(update.data.status, "manual_update_required");
+});
+
+test("redo replays read-safe commands", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-redo-"));
+  const previous = process.env.NITROSEND_CONFIG_DIR;
+  process.env.NITROSEND_CONFIG_DIR = dir;
+  try {
+    await runCli({ argv: ["describe", "whoami"], stdout: streams().stdout, stderr: streams().stderr });
+
+    const io = streams();
+    const code = await runCli({ argv: ["redo", "1", "--json"], stdout: io.stdout, stderr: io.stderr });
+    assert.equal(code, 0);
+    const parsed = JSON.parse(io.stdoutText);
+    assert.equal(parsed.data.replayed, true);
+    assert.equal(parsed.data.result.command, "describe");
+  } finally {
+    if (previous === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("redo refuses unsafe replay", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-redo-refuse-"));
+  const previous = process.env.NITROSEND_CONFIG_DIR;
+  process.env.NITROSEND_CONFIG_DIR = dir;
+  try {
+    await runCli({
+      argv: ["fixture", "destroy", "demo", "--dry-run"],
+      stdout: streams().stdout,
+      stderr: streams().stderr
+    });
+
+    const io = streams();
+    const code = await runCli({ argv: ["redo", "1", "--json"], stdout: io.stdout, stderr: io.stderr });
+    assert.equal(code, 0);
+    const parsed = JSON.parse(io.stdoutText);
+    assert.equal(parsed.data.replayed, false);
+    assert.equal(parsed.data.status, "refused");
   } finally {
     if (previous === undefined) delete process.env.NITROSEND_CONFIG_DIR;
     else process.env.NITROSEND_CONFIG_DIR = previous;

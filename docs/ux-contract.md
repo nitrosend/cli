@@ -34,6 +34,16 @@ Supported output modes:
 - `77`: permission or auth failure
 - `78`: unsupported or outdated CLI
 
+### MCP error envelopes
+
+Some MCP failures arrive as successful JSON-RPC `result` payloads, not as
+JSON-RPC `error` payloads. The CLI treats `tools/call` results with
+`isError: true` and `resources/read` text envelopes containing `"error": true`
+as command failures. Inline MCP codes map through the normal exit-code contract:
+`not_found` and validation-like failures use `65`, `unavailable` uses `69`,
+temporary failures use `75`, permission/auth failures use `77`, and
+`unsupported` uses `78`.
+
 ## Safety
 
 Mutating commands declare a safety class and whether they support `--dry-run`.
@@ -46,6 +56,9 @@ prompt would be required.
 `--machine` implies `--json --non-interactive --no-color --no-pager`. Commands
 with side effects receive an automatic idempotency key when applicable.
 `--explain` returns the resolved plan as data without performing side effects.
+For `mcp tools call <name>`, explain first uses cached `tools/list`
+annotations to report wrapped-tool safety and falls back to conservative
+name-pattern inference only when annotations are unavailable.
 
 Approval handoff commands are reserved as stable stubs:
 
@@ -53,6 +66,28 @@ Approval handoff commands are reserved as stable stubs:
 nitrosend approve <token>
 nitrosend reject <token>
 ```
+
+## First-Class Reads
+
+The CLI exposes common read workflows without requiring raw MCP JSON:
+
+```bash
+nitrosend status
+nitrosend flows list --status draft --per 10
+nitrosend campaigns list --search welcome
+nitrosend contacts list --query alice@example.com
+nitrosend lists list
+nitrosend templates list
+```
+
+These commands call existing MCP tools internally and keep the same
+`CommandResult` envelope as raw MCP commands.
+
+## Release Guidance
+
+`nitrosend --version` stays a raw version string for scripts. `nitrosend version`
+and `nitrosend update` provide structured package, Node runtime, and manual npm
+update guidance for humans and agents.
 
 ## Project Context
 

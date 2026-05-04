@@ -2,6 +2,7 @@ import { AuthContext } from "../auth.js";
 import { CliError } from "../errors.js";
 import { versionGate, VersionGate } from "../version/gate.js";
 import { CURRENT_VERSION } from "../version/current.js";
+import { ResourceReadResult, ToolCallResult, ToolListResult } from "./result.js";
 
 export interface JsonRpcResponse<T = unknown> {
   jsonrpc: "2.0";
@@ -43,20 +44,20 @@ export class McpClient {
     });
   }
 
-  listTools(): Promise<unknown> {
-    return this.request("tools/list");
+  async listTools(): Promise<ToolListResult> {
+    return (await this.request<ToolListResult>("tools/list")) ?? { tools: [] };
   }
 
-  callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    return this.request("tools/call", { name, arguments: args });
+  async callTool(name: string, args: Record<string, unknown>): Promise<ToolCallResult> {
+    return (await this.request<ToolCallResult>("tools/call", { name, arguments: args })) ?? {};
   }
 
   listResources(): Promise<unknown> {
     return this.request("resources/list");
   }
 
-  readResource(uri: string): Promise<unknown> {
-    return this.request("resources/read", { uri });
+  async readResource(uri: string): Promise<ResourceReadResult> {
+    return (await this.request<ResourceReadResult>("resources/read", { uri })) ?? { contents: [] };
   }
 
   listPrompts(): Promise<unknown> {

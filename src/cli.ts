@@ -40,7 +40,7 @@ export async function runCli(options: RunOptions): Promise<number> {
     }
 
     const [first] = parsed.positionals;
-    if (flagBoolean(parsed.flags, "version") || first === "version") {
+    if (flagBoolean(parsed.flags, "version")) {
       stdout.write(`${CURRENT_VERSION}\n`);
       return EXIT_CODES.ok;
     }
@@ -50,7 +50,7 @@ export async function runCli(options: RunOptions): Promise<number> {
     parsedCommand = execution.commandName;
 
     if (runtime.explain) {
-      const result = explainResult(execution, runtime, projectContext);
+      const result = await explainResult(execution, runtime, projectContext);
       stdout.write(renderResult(result, { mode: runtime.outputMode, color: runtime.color }));
       return EXIT_CODES.ok;
     }

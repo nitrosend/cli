@@ -139,7 +139,9 @@ function csvCell(value: unknown): string {
 
 function formatValue(value: unknown): string {
   if (value === null || value === undefined) return "";
-  if (typeof value === "object") return JSON.stringify(value);
+  if (typeof value === "object") {
+    return `\n${JSON.stringify(value, null, 2).split("\n").map((line) => `  ${line}`).join("\n")}`;
+  }
   return String(value);
 }
 

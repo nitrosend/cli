@@ -1,14 +1,34 @@
 import { parseArgs, flagBoolean, flagString } from "../args.js";
 import { loginWithApiKey, loginWithOAuth, logout, resolveAuth } from "../auth.js";
+import { readCache, writeCache } from "../cache/cache.js";
 import { currentProfile, defaultApiUrl } from "../config.js";
 import { commandNames, findDescriptor } from "../contracts/descriptors.js";
-import { commandResult, CommandDescriptor, CommandMeta } from "../contracts/types.js";
+import { commandResult, CommandDescriptor, CommandMeta, CommandResult, CommandSidecars } from "../contracts/types.js";
 import { ProjectContext } from "../context/project.js";
 import { CliError } from "../errors.js";
 import { readHistory } from "../history.js";
 import { McpClient } from "../mcp/client.js";
+import {
+  findTool,
+  hasSafetyAnnotations,
+  interpretResourceResult,
+  interpretToolResult,
+  parseToolJson,
+  safetyClassFromTool,
+  safetyClassFromToolName
+} from "../mcp/result.js";
 import { RuntimeOptions, CommandExecution } from "../runtime/types.js";
-import { unknownCommand } from "../runtime/resolve.js";
+import { resolveExecution, unknownCommand } from "../runtime/resolve.js";
+import { CURRENT_VERSION } from "../version/current.js";
+
+const TOOLS_CACHE_TTL_SECONDS = 900;
+const ENTITY_COMMANDS: Record<string, { entity: string; title: string; searchFilter?: string; statusFilter?: boolean }> = {
+  "flows list": { entity: "flows", title: "Flows", searchFilter: "search", statusFilter: true },
+  "campaigns list": { entity: "campaigns", title: "Campaigns", searchFilter: "search", statusFilter: true },
+  "contacts list": { entity: "contacts", title: "Contacts", searchFilter: "query" },
+  "lists list": { entity: "lists", title: "Lists", searchFilter: "name" },
+  "templates list": { entity: "templates", title: "Templates", searchFilter: "subject" }
+};
 
 export async function executeCommand(
   execution: CommandExecution,
@@ -23,15 +43,14 @@ export async function executeCommand(
   };
 
   switch (execution.commandName) {
-    case "dashboard":
-      return commandResult("dashboard", await dashboardData(runtime, projectContext), {
-        meta,
-        sidecars: {
-          blockers: [],
-          next_action: "Run `nitrosend describe mcp tools list` or `nitrosend mcp tools list --json`.",
-          suggested_tool_calls: [{ name: "nitro_get_status", arguments: {} }]
-        }
+    case "dashboard": {
+      const dashboard = await dashboardData(runtime, projectContext);
+      return commandResult("dashboard", dashboard.data, {
+        meta: { ...meta, ...dashboard.meta },
+        sidecars: dashboard.sidecars,
+        presentation: { type: "key_value" }
       });
+    }
     case "login":
       return commandResult("login", await loginCommand(execution.rest, execution.flags, runtime), { meta });
     case "logout": {
@@ -40,6 +59,12 @@ export async function executeCommand(
     }
     case "whoami":
       return commandResult("whoami", await whoamiData(runtime), { meta, presentation: { type: "key_value" } });
+    case "status":
+      return commandResult("status", await statusCommand(runtime), { meta, presentation: { type: "key_value" } });
+    case "version":
+      return commandResult("version", versionData(), { meta, presentation: { type: "key_value" } });
+    case "update":
+      return commandResult("update", updateData(), { meta, presentation: { type: "key_value" } });
     case "describe":
       return commandResult("describe", describeCommand(execution.rest), { meta });
     case "completion":
@@ -53,7 +78,7 @@ export async function executeCommand(
         }
       });
     case "redo":
-      return commandResult("redo", await redoData(execution.rest), { meta });
+      return redoCommand(execution.rest, runtime, projectContext, meta);
     case "fixture destroy":
       return commandResult("fixture destroy", fixtureDestroyData(execution.rest, runtime), {
         meta,
@@ -67,6 +92,9 @@ export async function executeCommand(
     case "reject":
       return commandResult(execution.commandName, approvalData(execution), { meta });
     default:
+      if (ENTITY_COMMANDS[execution.commandName]) {
+        return entityListCommand(execution, runtime, meta);
+      }
       if (execution.commandName.startsWith("mcp ")) {
         return commandResult(execution.commandName, await executeMcp(execution, runtime), { meta });
       }
@@ -74,8 +102,8 @@ export async function executeCommand(
   }
 }
 
-export function explainResult(execution: CommandExecution, runtime: RuntimeOptions, projectContext: ProjectContext) {
-  return commandResult("explain", {
+export async function explainResult(execution: CommandExecution, runtime: RuntimeOptions, projectContext: ProjectContext) {
+  const data: Record<string, unknown> = {
     command: execution.commandName,
     descriptor: execution.descriptor,
     resolved_context: {
@@ -86,7 +114,13 @@ export function explainResult(execution: CommandExecution, runtime: RuntimeOptio
     would_execute: false,
     idempotency_key: runtime.idempotencyKey,
     output_mode: runtime.outputMode
-  }, {
+  };
+
+  if (execution.commandName === "mcp tools call" && execution.rest[0]) {
+    data.wrapped_tool_safety = await wrappedToolSafety(runtime, execution.rest[0]);
+  }
+
+  return commandResult("explain", data, {
     meta: {
       environment: projectContext.environment,
       idempotency_key: runtime.idempotencyKey,
@@ -138,26 +172,203 @@ async function whoamiData(runtime: RuntimeOptions): Promise<Record<string, unkno
   };
 }
 
-async function dashboardData(runtime: RuntimeOptions, projectContext: ProjectContext): Promise<Record<string, unknown>> {
+async function statusCommand(runtime: RuntimeOptions): Promise<Record<string, unknown>> {
+  return await callMcpResult(runtime, "nitro_get_status", {});
+}
+
+async function entityListCommand(
+  execution: CommandExecution,
+  runtime: RuntimeOptions,
+  meta: CommandMeta
+): Promise<CommandResult> {
+  const config = ENTITY_COMMANDS[execution.commandName];
+  const page = integerFlag(execution.flags, "page");
+  const per = integerFlag(execution.flags, "per") ?? integerFlag(execution.flags, "limit");
+  const filters: Record<string, unknown> = {};
+  const search = flagString(execution.flags, "search") || flagString(execution.flags, "query");
+  const status = flagString(execution.flags, "status");
+  const listId = integerFlag(execution.flags, "list-id");
+
+  if (search && config.searchFilter) filters[config.searchFilter] = search;
+  if (status && config.statusFilter) filters.status = status;
+  if (listId !== undefined && config.entity === "contacts") filters.list_id = listId;
+
+  const result = await callMcpResult(runtime, "nitro_query", {
+    entity: config.entity,
+    ...(Object.keys(filters).length > 0 ? { filters } : {}),
+    ...(page !== undefined ? { page } : {}),
+    ...(per !== undefined ? { per } : {})
+  });
+
+  const rows = Array.isArray(result.items) ? result.items as Array<Record<string, unknown>> : [];
+  return commandResult(execution.commandName, {
+    title: config.title,
+    rows,
+    pagination: result.pagination
+  }, {
+    meta,
+    presentation: {
+      type: "table",
+      columns: tableColumnsFor(config.entity, rows)
+    }
+  });
+}
+
+function versionData(): Record<string, unknown> {
+  return {
+    package: "@nitrosend/cli",
+    version: CURRENT_VERSION,
+    node: process.version,
+    update_command: "npm install -g @nitrosend/cli@latest"
+  };
+}
+
+function updateData(): Record<string, unknown> {
+  return {
+    status: "manual_update_required",
+    package: "@nitrosend/cli",
+    current_version: CURRENT_VERSION,
+    command: "npm install -g @nitrosend/cli@latest",
+    next_action: "Run the command with your package manager, then check `nitrosend --version`."
+  };
+}
+
+interface DashboardPayload {
+  data: Record<string, unknown>;
+  sidecars: CommandSidecars;
+  meta?: CommandMeta;
+}
+
+async function dashboardData(runtime: RuntimeOptions, projectContext: ProjectContext): Promise<DashboardPayload> {
   let authState: Record<string, unknown>;
   try {
     authState = await whoamiData(runtime);
   } catch {
     authState = { source: "none", next_action: "Run `nitrosend login` or set NITROSEND_API_KEY." };
+    return minimalDashboard(projectContext, authState);
   }
 
+  const cacheKey = dashboardCacheKey(authState, projectContext);
+  const cached = await readCache<Record<string, unknown>>(cacheKey);
+  if (cached && !cached.stale) {
+    return dashboardFromStatus(projectContext, authState, cached.value, {
+      source: "cache",
+      meta: { cached: true }
+    });
+  }
+
+  try {
+    const auth = await resolveAuth(runtime.profile);
+    const client = new McpClient({ auth });
+    const result = await client.callTool("nitro_get_status", {});
+    const interpreted = interpretToolResult(result);
+    if (!interpreted.ok) {
+      throw new CliError(interpreted.error.message, {
+        code: interpreted.error.code,
+        exitCodeName: interpreted.error.exitCodeName,
+        retriable: interpreted.error.retriable
+      });
+    }
+
+    const parsed = parseToolJson<{ result?: Record<string, unknown> }>(interpreted.value);
+    const status = parsed?.result && typeof parsed.result === "object" ? parsed.result : parsed as Record<string, unknown> | null;
+    if (!status) throw new CliError("nitro_get_status did not return JSON status", { code: "invalid_status", exitCodeName: "data" });
+
+    await writeCache(cacheKey, status, 300);
+    return dashboardFromStatus(projectContext, authState, status, { source: "live" });
+  } catch (error) {
+    if (cached) {
+      return dashboardFromStatus(projectContext, authState, cached.value, {
+        source: "stale",
+        meta: { cached: true, stale: true },
+        warning: error instanceof Error ? error.message : String(error)
+      });
+    }
+    return minimalDashboard(projectContext, authState, error instanceof Error ? error.message : String(error));
+  }
+}
+
+function dashboardFromStatus(
+  projectContext: ProjectContext,
+  authState: Record<string, unknown>,
+  status: Record<string, unknown>,
+  options: { source: "live" | "cache" | "stale"; meta?: CommandMeta; warning?: string }
+): DashboardPayload {
+  const account = recordValue(status.account);
+  const onboarding = recordValue(status.onboarding);
+  const provider = recordValue(status.provider);
+  const billing = recordValue(status.billing);
+  const firstSendComplete = completed(onboarding.first_send);
+  const blockers: string[] = [];
+
+  if (firstSendComplete === false) blockers.push("first_send is not completed");
+  if (account.using_sandbox === true) blockers.push("Sandbox sender is active");
+  if (provider.configured === false) blockers.push("Email provider is not fully configured");
+
   return {
-    profile: authState.profile || projectContext.profile || "default",
-    environment: projectContext.environment,
-    project_config: projectContext.path || null,
-    auth: authState,
-    blockers: authState.source === "none" ? ["No active credentials"] : [],
-    suggested_actions: [
-      "nitrosend mcp tools list --json",
-      "nitrosend describe mcp tools call",
-      "nitrosend recent"
-    ]
+    data: {
+      profile: authState.profile || projectContext.profile || "default",
+      environment: projectContext.environment,
+      project_config: projectContext.path || null,
+      status_source: options.source,
+      auth: authState,
+      account: pick(account, ["tier", "can_send", "contact_count", "flow_count", "campaign_count", "using_sandbox"]),
+      onboarding: {
+        brand_setup: completed(onboarding.brand_setup),
+        domain_verified: completed(onboarding.domain_verified),
+        first_contact: completed(onboarding.first_contact),
+        first_send: firstSendComplete
+      },
+      provider: pick(provider, ["name", "configured", "domain_verified"]),
+      billing: pick(billing, ["plan", "tier", "wallet_balance_cents", "resources"])
+    },
+    meta: options.meta,
+    sidecars: {
+      blockers,
+      warnings: options.warning ? [`Using ${options.source} dashboard data: ${options.warning}`] : undefined,
+      next_action: nextDashboardAction(blockers),
+      suggested_tool_calls: [{ name: "nitro_get_status", arguments: {} }]
+    }
   };
+}
+
+function minimalDashboard(projectContext: ProjectContext, authState: Record<string, unknown>, warning?: string): DashboardPayload {
+  const unauthenticated = authState.source === "none";
+  return {
+    data: {
+      profile: authState.profile || projectContext.profile || "default",
+      environment: projectContext.environment,
+      project_config: projectContext.path || null,
+      auth: authState,
+      blockers: unauthenticated ? ["No active credentials"] : [],
+      suggested_actions: [
+        "nitrosend status",
+        "nitrosend flows list",
+        "nitrosend recent"
+      ]
+    },
+    sidecars: {
+      blockers: unauthenticated ? ["No active credentials"] : [],
+      warnings: warning ? [warning] : undefined,
+      next_action: unauthenticated
+        ? "Run `nitrosend login --api-key ...` or set NITROSEND_API_KEY."
+        : "Run `nitrosend status --json`."
+    }
+  };
+}
+
+function dashboardCacheKey(authState: Record<string, unknown>, projectContext: ProjectContext): string {
+  const profile = String(authState.profile || projectContext.profile || authState.source || "default");
+  const apiUrl = String(authState.apiUrl || "default");
+  return `dashboard_${profile}_${apiUrl.replace(/[^a-z0-9_-]/gi, "_")}`;
+}
+
+function nextDashboardAction(blockers: string[]): string {
+  if (blockers.some((blocker) => blocker.includes("first_send"))) {
+    return "Run `nitrosend status` and complete the first-send setup.";
+  }
+  if (blockers.length > 0) return "Run `nitrosend status --json` for setup details.";
+  return "Run `nitrosend flows list` or `nitrosend contacts list`.";
 }
 
 function describeCommand(rest: string[]): CommandDescriptor {
@@ -187,7 +398,12 @@ async function recentData(): Promise<{ rows: Array<Record<string, unknown>> }> {
   return { rows };
 }
 
-async function redoData(rest: string[]): Promise<Record<string, unknown>> {
+async function redoCommand(
+  rest: string[],
+  runtime: RuntimeOptions,
+  projectContext: ProjectContext,
+  meta: CommandMeta
+): Promise<CommandResult> {
   const index = Number(rest[0] || "1") - 1;
   const entries = await readHistory();
   const entry = entries[index];
@@ -197,11 +413,59 @@ async function redoData(rest: string[]): Promise<Record<string, unknown>> {
       exitCodeName: "data"
     });
   }
-  return {
+
+  const replay = replayExecutionFor(entry.command);
+  if (!replay.allowed) {
+    return commandResult("redo", {
+      selected: index + 1,
+      command: entry.command,
+      replayed: false,
+      status: "refused",
+      reason: replay.reason,
+      next_action: "Rerun the command manually after review."
+    }, { meta });
+  }
+
+  const result = await executeCommand(replay.execution, runtimeForReplay(runtime, replay.execution), projectContext);
+  return commandResult("redo", {
     selected: index + 1,
     command: entry.command,
-    status: "ready",
-    next_action: "Rerun the command manually after review."
+    replayed: true,
+    result
+  }, { meta });
+}
+
+function replayExecutionFor(command: string):
+  | { allowed: true; execution: CommandExecution }
+  | { allowed: false; reason: string } {
+  const argv = command.trim().split(/\s+/).filter(Boolean);
+  if (argv[0] === "nitrosend") argv.shift();
+  if (argv.length === 0) return { allowed: false, reason: "Empty history entry cannot be replayed" };
+
+  const parsed = parseArgs(argv);
+  const resolved = resolveExecution(parsed.positionals);
+  const execution: CommandExecution = { ...resolved, flags: parsed.flags };
+  if (["redo", "login", "logout", "approve", "reject"].includes(execution.commandName)) {
+    return { allowed: false, reason: `${execution.commandName} is not replayable` };
+  }
+
+  const safetyClass = execution.commandName === "mcp tools call"
+    ? safetyClassFromToolName(execution.rest[0] || "")
+    : execution.descriptor.safety.class;
+
+  if (safetyClass !== "read") {
+    return { allowed: false, reason: `Refusing to replay ${safetyClass} command` };
+  }
+
+  return { allowed: true, execution };
+}
+
+function runtimeForReplay(runtime: RuntimeOptions, execution: CommandExecution): RuntimeOptions {
+  return {
+    ...runtime,
+    profile: flagString(execution.flags, "profile") || runtime.profile,
+    apiUrl: flagString(execution.flags, "api-url") || runtime.apiUrl,
+    dryRun: flagBoolean(execution.flags, "dry-run") || runtime.dryRun
   };
 }
 
@@ -235,16 +499,19 @@ async function executeMcp(execution: CommandExecution, runtime: RuntimeOptions):
   switch (execution.commandName) {
     case "mcp initialize":
       return client.initialize();
-    case "mcp tools list":
-      return client.listTools();
+    case "mcp tools list": {
+      const tools = await client.listTools();
+      await writeToolsCache(auth.apiUrl, tools);
+      return tools;
+    }
     case "mcp tools call":
       if (!rest[0]) throw new CliError("Usage: nitrosend mcp tools call <name> --args '{...}'", { code: "usage_error", exitCodeName: "usage" });
-      return client.callTool(rest[0], args);
+      return checkedToolResult(await client.callTool(rest[0], args));
     case "mcp resources list":
       return client.listResources();
     case "mcp resources read":
       if (!rest[0]) throw new CliError("Usage: nitrosend mcp resources read <uri>", { code: "usage_error", exitCodeName: "usage" });
-      return client.readResource(rest[0]);
+      return checkedResourceResult(await client.readResource(rest[0]));
     case "mcp prompts list":
       return client.listPrompts();
     case "mcp prompts get":
@@ -253,6 +520,98 @@ async function executeMcp(execution: CommandExecution, runtime: RuntimeOptions):
     default:
       throw unknownCommand(execution.commandName);
   }
+}
+
+async function callMcpResult(
+  runtime: RuntimeOptions,
+  name: string,
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const auth = await resolveAuth(runtime.profile);
+  const client = new McpClient({ auth });
+  const result = checkedToolResult(await client.callTool(name, args));
+  const parsed = parseToolJson<{ result?: unknown }>(result);
+  const payload = parsed && "result" in parsed ? parsed.result : parsed;
+  if (!recordLike(payload)) {
+    throw new CliError(`${name} did not return an object result`, {
+      code: "invalid_tool_result",
+      exitCodeName: "data"
+    });
+  }
+  return payload as Record<string, unknown>;
+}
+
+async function wrappedToolSafety(runtime: RuntimeOptions, name: string): Promise<Record<string, unknown>> {
+  const auth = await resolveAuth(runtime.profile).catch(() => null);
+  if (auth) {
+    const cached = await readToolsCache(auth.apiUrl);
+    const cachedTool = findTool(cached, name);
+    if (cachedTool && hasSafetyAnnotations(cachedTool)) {
+      return {
+        name,
+        safety_class: safetyClassFromTool(cachedTool, name),
+        source: "tools_list_cache",
+        annotations: cachedTool.annotations
+      };
+    }
+
+    const liveTools = await fetchToolsCache(auth).catch(() => null);
+    const liveTool = findTool(liveTools, name);
+    if (liveTool && hasSafetyAnnotations(liveTool)) {
+      return {
+        name,
+        safety_class: safetyClassFromTool(liveTool, name),
+        source: "tools_list_cache",
+        annotations: liveTool.annotations
+      };
+    }
+  }
+
+  return {
+    name,
+    safety_class: safetyClassFromToolName(name),
+    source: "name_pattern"
+  };
+}
+
+async function fetchToolsCache(auth: Awaited<ReturnType<typeof resolveAuth>>) {
+  const client = new McpClient({ auth });
+  const tools = await client.listTools();
+  await writeToolsCache(auth.apiUrl, tools);
+  return tools;
+}
+
+async function readToolsCache(apiUrl: string) {
+  const cached = await readCache<Awaited<ReturnType<McpClient["listTools"]>>>(toolsCacheKey(apiUrl));
+  return cached?.value ?? null;
+}
+
+async function writeToolsCache(apiUrl: string, tools: Awaited<ReturnType<McpClient["listTools"]>>): Promise<void> {
+  await writeCache(toolsCacheKey(apiUrl), tools, TOOLS_CACHE_TTL_SECONDS);
+}
+
+function toolsCacheKey(apiUrl: string): string {
+  return `mcp_tools_${apiUrl.replace(/[^a-z0-9_-]/gi, "_")}`;
+}
+
+function checkedToolResult(result: Awaited<ReturnType<McpClient["callTool"]>>) {
+  const interpreted = interpretToolResult(result);
+  if (interpreted.ok) return interpreted.value;
+  throw new CliError(interpreted.error.message, {
+    code: interpreted.error.code,
+    exitCodeName: interpreted.error.exitCodeName,
+    retriable: interpreted.error.retriable
+  });
+}
+
+function checkedResourceResult(result: Awaited<ReturnType<McpClient["readResource"]>>) {
+  const interpreted = interpretResourceResult(result);
+  if (interpreted.ok) return interpreted.value;
+  throw new CliError(interpreted.error.message, {
+    code: interpreted.error.code,
+    exitCodeName: interpreted.error.exitCodeName,
+    retriable: interpreted.error.retriable
+  });
 }
 
 function parseJsonObject(value: string): Record<string, unknown> {
@@ -268,4 +627,52 @@ function parseJsonObject(value: string): Record<string, unknown> {
     });
   }
   throw new CliError("JSON args must be an object", { code: "invalid_json_args", exitCodeName: "data" });
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function completed(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  const record = recordValue(value);
+  if (typeof record.completed === "boolean") return record.completed;
+  return null;
+}
+
+function pick(record: Record<string, unknown>, keys: string[]): Record<string, unknown> {
+  return Object.fromEntries(keys.map((key) => [key, record[key]]).filter(([, value]) => value !== undefined));
+}
+
+function integerFlag(flags: Record<string, string | boolean>, name: string): number | undefined {
+  const value = flagString(flags, name);
+  if (value === undefined) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    throw new CliError(`--${name} must be a positive integer`, {
+      code: "invalid_integer_flag",
+      exitCodeName: "data"
+    });
+  }
+  return parsed;
+}
+
+function tableColumnsFor(entity: string, rows: Array<Record<string, unknown>>) {
+  const preferred: Record<string, string[]> = {
+    flows: ["id", "name", "status", "approval_state", "trigger_event", "step_count"],
+    campaigns: ["id", "name", "status", "sent_count", "created_at"],
+    contacts: ["id", "email", "first_name", "last_name", "subscribed_email"],
+    lists: ["id", "name", "contact_count", "created_at"],
+    templates: ["id", "name", "subject", "created_at"]
+  };
+  const keys = preferred[entity] || Object.keys(rows[0] || {}).slice(0, 6);
+  return keys.map((key) => ({ key, label: humanLabel(key) }));
+}
+
+function humanLabel(value: string): string {
+  return value.replace(/_/g, " ").replace(/^\w/, (match) => match.toUpperCase());
+}
+
+function recordLike(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

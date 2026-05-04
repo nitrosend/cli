@@ -58,6 +58,20 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     agent: { suitable: true }
   },
   {
+    name: "status",
+    group: "core",
+    summary: "Show live account health, onboarding state, and next actions.",
+    usage: "nitrosend status [--json]",
+    input_schema: emptySchema,
+    output_schema: objectSchema,
+    examples: [{ description: "Show account status", command: "nitrosend status" }],
+    safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
+    cache: { mode: "read-through", ttl_seconds: 300 },
+    idempotency: { mode: "none" },
+    agent: { suitable: true }
+  },
+  ...entityListDescriptors(),
+  {
     name: "describe",
     group: "core",
     summary: "Return descriptor, schemas, examples, and safety metadata for a command.",
@@ -104,7 +118,33 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     input_schema: objectSchema,
     output_schema: objectSchema,
     examples: [{ description: "Explain last command", command: "nitrosend redo 1 --explain" }],
-    safety: { class: "mutating", supports_dry_run: false, requires_confirmation: false },
+    safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
+    cache: { mode: "none" },
+    idempotency: { mode: "none" },
+    agent: { suitable: true }
+  },
+  {
+    name: "version",
+    group: "release",
+    summary: "Show CLI version and runtime details.",
+    usage: "nitrosend version [--json]",
+    input_schema: emptySchema,
+    output_schema: objectSchema,
+    examples: [{ description: "Show version details", command: "nitrosend version --json" }],
+    safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
+    cache: { mode: "none" },
+    idempotency: { mode: "none" },
+    agent: { suitable: true }
+  },
+  {
+    name: "update",
+    group: "release",
+    summary: "Show update guidance for the installed CLI.",
+    usage: "nitrosend update [--json]",
+    input_schema: emptySchema,
+    output_schema: objectSchema,
+    examples: [{ description: "Show update command", command: "nitrosend update" }],
+    safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
     cache: { mode: "none" },
     idempotency: { mode: "none" },
     agent: { suitable: true }
@@ -185,11 +225,48 @@ function mcpDescriptors(): CommandDescriptor[] {
     ["mcp resources read", "Read an MCP resource.", "nitrosend mcp resources read <uri>"],
     ["mcp prompts list", "List MCP prompts.", "nitrosend mcp prompts list [--json]"],
     ["mcp prompts get", "Get an MCP prompt.", "nitrosend mcp prompts get <name> --args '{...}'"]
+  ].map(([name, summary, usage]) => {
+    const descriptor = {
+      ...base,
+      name,
+      summary,
+      usage,
+      examples: [{ description: summary, command: usage.replace(" [--json]", "") }]
+    };
+
+    if (name === "mcp tools call") {
+      return {
+        ...descriptor,
+        safety: { class: "external-effect", supports_dry_run: false, requires_confirmation: false } as const,
+        agent: {
+          suitable: true,
+          reason: "Proxy command. Use --explain with a tool name to inspect inferred wrapped-tool safety."
+        }
+      };
+    }
+
+    return descriptor;
+  });
+}
+
+function entityListDescriptors(): CommandDescriptor[] {
+  return [
+    ["flows list", "List flows.", "nitrosend flows list [--status <status>] [--search <text>] [--page <n>] [--per <n>]"],
+    ["campaigns list", "List campaigns.", "nitrosend campaigns list [--status <status>] [--search <text>] [--page <n>] [--per <n>]"],
+    ["contacts list", "List contacts.", "nitrosend contacts list [--query <text>] [--list-id <id>] [--page <n>] [--per <n>]"],
+    ["lists list", "List contact lists.", "nitrosend lists list [--search <text>] [--page <n>] [--per <n>]"],
+    ["templates list", "List templates.", "nitrosend templates list [--search <text>] [--page <n>] [--per <n>]"]
   ].map(([name, summary, usage]) => ({
-    ...base,
     name,
+    group: "data",
     summary,
     usage,
-    examples: [{ description: summary, command: usage.replace(" [--json]", "") }]
+    input_schema: objectSchema,
+    output_schema: objectSchema,
+    examples: [{ description: summary, command: usage }],
+    safety: { class: "read", supports_dry_run: false, requires_confirmation: false } as const,
+    cache: { mode: "none" as const },
+    idempotency: { mode: "none" as const },
+    agent: { suitable: true }
   }));
 }

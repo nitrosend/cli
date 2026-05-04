@@ -24,7 +24,14 @@ const GLOBAL_FLAGS = new Set([
   "args",
   "json-args",
   "confirm",
-  "no-browser"
+  "no-browser",
+  "page",
+  "per",
+  "limit",
+  "status",
+  "search",
+  "query",
+  "list-id"
 ]);
 
 export function runtimeOptions(flags: Record<string, string | boolean>): RuntimeOptions {
