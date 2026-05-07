@@ -65,8 +65,21 @@ test("login descriptor supports non-interactive api key login", async () => {
 
   assert.equal(code, 0);
   const parsed = JSON.parse(io.stdoutText);
+  assert.equal(parsed.data.safety.class, "local-state");
+  assert.match(parsed.data.summary, /browser OAuth when no API key/);
+  assert.match(parsed.data.usage, /--no-browser/);
+  assert.equal(parsed.data.examples[1].command, "nitrosend login");
   assert.equal(parsed.data.agent.suitable, true);
   assert.match(parsed.data.agent.reason, /--api-key/);
+});
+
+test("logout descriptor is local state only", async () => {
+  const io = streams();
+  const code = await runCli({ argv: ["describe", "logout", "--json"], stdout: io.stdout, stderr: io.stderr });
+
+  assert.equal(code, 0);
+  const parsed = JSON.parse(io.stdoutText);
+  assert.equal(parsed.data.safety.class, "local-state");
 });
 
 test("mcp tools call descriptor is conservative proxy safety", async () => {
@@ -211,6 +224,37 @@ test("dashboard human output is blocker-aware and does not duplicate sidecars", 
     assert.doesNotMatch(io.stdoutText, /nitrosend status/);
     assert.equal((io.stdoutText.match(/^Blockers:/gm) || []).length, 1);
     assert.match(io.stdoutText, /nitrosend login --api-key/);
+  } finally {
+    if (previous === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("human output renders API URL as a readable label", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-human-label-"));
+  const previous = process.env.NITROSEND_CONFIG_DIR;
+  process.env.NITROSEND_CONFIG_DIR = dir;
+
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "profiles.json"), JSON.stringify({
+    currentProfile: "default",
+    profiles: {
+      default: {
+        name: "default",
+        apiUrl: "https://api.example.test/mcp",
+        token: "nskey_test_abc123",
+        tokenType: "api_key"
+      }
+    }
+  }));
+
+  try {
+    const io = streams();
+    const code = await runCli({ argv: ["whoami", "--no-color"], stdout: io.stdout, stderr: io.stderr });
+    assert.equal(code, 0);
+    assert.match(io.stdoutText, /API URL: https:\/\/api\.example\.test\/mcp/);
+    assert.doesNotMatch(io.stdoutText, /ApiUrl:/);
   } finally {
     if (previous === undefined) delete process.env.NITROSEND_CONFIG_DIR;
     else process.env.NITROSEND_CONFIG_DIR = previous;

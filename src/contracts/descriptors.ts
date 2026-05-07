@@ -21,12 +21,15 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
   {
     name: "login",
     group: "auth",
-    summary: "Authenticate with OAuth or store an API-key profile.",
-    usage: "nitrosend login [--api-key <key>] [--api-url <url>] [--profile <name>]",
+    summary: "Store an API-key profile, or start browser OAuth when no API key is provided.",
+    usage: "nitrosend login [--api-key <key>] [--no-browser] [--api-url <url>] [--profile <name>]",
     input_schema: objectSchema,
     output_schema: objectSchema,
-    examples: [{ description: "Log in with API key", command: "nitrosend login --api-key nskey_test_..." }],
-    safety: { class: "mutating", supports_dry_run: false, requires_confirmation: false },
+    examples: [
+      { description: "Log in with API key", command: "nitrosend login --api-key nskey_test_..." },
+      { description: "Start browser OAuth login", command: "nitrosend login" }
+    ],
+    safety: { class: "local-state", supports_dry_run: false, requires_confirmation: false },
     cache: { mode: "none" },
     idempotency: { mode: "none" },
     agent: { suitable: true, reason: "Use --api-key for non-interactive login. Browser OAuth login is human-facing." }
@@ -39,7 +42,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     input_schema: emptySchema,
     output_schema: objectSchema,
     examples: [{ description: "Log out", command: "nitrosend logout" }],
-    safety: { class: "mutating", supports_dry_run: false, requires_confirmation: false },
+    safety: { class: "local-state", supports_dry_run: false, requires_confirmation: false },
     cache: { mode: "none" },
     idempotency: { mode: "none" },
     agent: { suitable: true }

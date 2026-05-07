@@ -65,6 +65,10 @@ Destructive commands use typed confirmation, not `y/N`. `--yes` never bypasses a
 typed confirmation. `--non-interactive` and `--machine` fail closed whenever a
 prompt would be required.
 
+`local-state` commands mutate only the user's local Nitrosend CLI files, such as
+profile creation/removal. They do not call Nitrosend server-side mutation APIs,
+but agents should still treat any credential material as sensitive.
+
 ## Agent Mode
 
 `--machine` implies `--json --non-interactive --no-color --no-pager`. Commands

@@ -35,7 +35,10 @@ nitrosend login
 ```
 
 Profiles are stored outside the repository under the platform config directory,
-or under `NITROSEND_CONFIG_DIR` when that environment variable is set.
+or under `NITROSEND_CONFIG_DIR` when that environment variable is set. API-key
+profiles are stored as a local JSON profile with directory permissions locked
+to the current user. For machines where plaintext local profile storage is not
+acceptable, use `NITROSEND_API_KEY` instead of `nitrosend login --api-key`.
 
 ## MCP Commands
 

@@ -212,7 +212,11 @@ function titleize(value: string): string {
 }
 
 function humanize(value: string): string {
-  return value.replace(/_/g, " ").replace(/^\w/, (match) => match.toUpperCase());
+  if (value === "apiUrl" || value === "api_url") return "API URL";
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/_/g, " ")
+    .replace(/^\w/, (match) => match.toUpperCase());
 }
 
 function colorize(value: string, style: "bold", enabled: boolean): string {

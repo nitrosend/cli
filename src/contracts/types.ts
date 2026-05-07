@@ -4,6 +4,7 @@ export type OutputMode = "tty" | "json" | "ndjson" | "csv";
 
 export type SafetyClass =
   | "read"
+  | "local-state"
   | "dry-run-mutating"
   | "mutating"
   | "external-effect"
