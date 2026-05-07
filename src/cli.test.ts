@@ -317,6 +317,50 @@ test("status command returns parsed MCP status", async () => {
   }
 });
 
+test("trace exposes HTTP failure status and body preview in json errors", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-trace-http-"));
+  const previousConfig = process.env.NITROSEND_CONFIG_DIR;
+  const previousFetch = globalThis.fetch;
+  process.env.NITROSEND_CONFIG_DIR = dir;
+
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "profiles.json"), JSON.stringify({
+    currentProfile: "default",
+    profiles: {
+      default: {
+        name: "default",
+        apiUrl: "https://api.example.test/mcp",
+        token: "nskey_test_abc123",
+        tokenType: "api_key"
+      }
+    }
+  }));
+
+  globalThis.fetch = async () => new Response("Host not in allowlist", {
+    status: 403,
+    headers: { "Content-Type": "text/plain", "X-Request-Id": "req_456" }
+  });
+
+  try {
+    const io = streams();
+    const code = await runCli({ argv: ["status", "--json", "--trace"], stdout: io.stdout, stderr: io.stderr });
+    assert.equal(code, 77);
+    const parsed = JSON.parse(io.stdoutText);
+    assert.equal(parsed.ok, false);
+    assert.equal(parsed.error.code, "authentication_failed");
+    assert.match(parsed.error.message, /check api\.example\.test is reachable/);
+    assert.equal(parsed.meta.trace[0].name, "mcp tools/call");
+    assert.equal(parsed.meta.trace[0].response_status, 403);
+    assert.equal(parsed.meta.trace[0].response_body_preview, "Host not in allowlist");
+    assert.match(io.stderrText, /body="Host not in allowlist"/);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousConfig === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previousConfig;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("entity list commands call nitro_query and render rows", async () => {
   const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-flows-list-"));
   const previousConfig = process.env.NITROSEND_CONFIG_DIR;

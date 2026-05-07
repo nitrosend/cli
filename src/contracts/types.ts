@@ -87,6 +87,13 @@ export type Presentation = TablePresentation | KeyValuePresentation | PreviewPre
 export interface TraceEvent {
   name: string;
   duration_ms: number;
+  request_url?: string;
+  request_method?: string;
+  response_status?: number;
+  response_content_type?: string;
+  response_headers?: Record<string, string>;
+  response_body_preview?: string;
+  error?: string;
 }
 
 export interface CommandMeta {

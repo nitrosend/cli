@@ -44,6 +44,20 @@ as command failures. Inline MCP codes map through the normal exit-code contract:
 temporary failures use `75`, permission/auth failures use `77`, and
 `unsupported` uses `78`.
 
+### HTTP response classification
+
+All networked commands use the shared HTTP transport. The transport classifies
+connection failures, HTTP failures, and malformed bodies before command-specific
+parsing runs:
+
+- Network/DNS/timeout failures use `69` with `code: "network_error"`.
+- HTTP `401`/`403` use `77` with `code: "authentication_failed"`, even when the
+  response body is plain text rather than JSON.
+- HTTP `2xx` with a non-JSON body uses `65` with
+  `code: "invalid_json_response"`.
+- Other HTTP failures use the server JSON error message when present and fall
+  back to `code: "http_error"`.
+
 ## Safety
 
 Mutating commands declare a safety class and whether they support `--dry-run`.
@@ -109,5 +123,8 @@ output: json
 ## Performance Budget
 
 Help, version, and cached status paths are expected to stay fast. `--trace`
-prints timing diagnostics to stderr. Spinners may appear only after 300ms and
-never in machine output.
+prints timing diagnostics to stderr and adds `meta.trace` to JSON envelopes.
+Trace events include request URL, method, response status, selected response
+headers, and the first 200 characters of the response body only for failed or
+non-JSON responses. Spinners may appear only after 300ms and never in machine
+output.

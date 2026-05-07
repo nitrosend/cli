@@ -1,5 +1,6 @@
 import { AuthContext } from "../auth.js";
 import { CliError } from "../errors.js";
+import { fetchText, httpError, parseJsonBody } from "../http.js";
 import { versionGate, VersionGate } from "../version/gate.js";
 import { CURRENT_VERSION } from "../version/current.js";
 import { ResourceReadResult, ToolCallResult, ToolListResult } from "./result.js";
@@ -69,7 +70,7 @@ export class McpClient {
   }
 
   async request<T = unknown>(method: string, params?: unknown): Promise<T | null> {
-    const response = await this.fetcher(this.auth.apiUrl, {
+    const response = await fetchText(this.auth.apiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -82,27 +83,27 @@ export class McpClient {
         method,
         ...(params === undefined ? {} : { params })
       })
+    }, {
+      fetcher: this.fetcher,
+      name: `mcp ${method}`,
+      service: "MCP"
     });
 
     this.gate.check(response.headers);
 
     if (response.status === 202) return null;
 
-    const text = await response.text();
-    let payload: JsonRpcResponse<T>;
-    try {
-      payload = JSON.parse(text) as JsonRpcResponse<T>;
-    } catch {
-      throw new CliError(`MCP response was not valid JSON (HTTP ${response.status})`);
-    }
+    const payload = parseJsonBody<JsonRpcResponse<T>>(response, "MCP");
 
     if (!response.ok) {
-      const message = payload.error?.message || `MCP request failed with HTTP ${response.status}`;
-      throw new CliError(message, response.status === 401 || response.status === 403 ? 2 : 1);
+      throw httpError(response, payload);
     }
 
     if (payload.error) {
-      throw new CliError(payload.error.message);
+      throw new CliError(payload.error.message, {
+        code: "mcp_json_rpc_error",
+        exitCodeName: "data"
+      });
     }
 
     return payload.result ?? null;

@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { URL } from "node:url";
 import { currentProfile, defaultApiUrl, deleteCurrentProfile, Profile, storeProfile } from "./config.js";
 import { CliError } from "./errors.js";
+import { fetchJson } from "./http.js";
 
 export interface AuthContext {
   token: string;
@@ -40,11 +41,18 @@ export async function resolveAuth(profileName?: string): Promise<AuthContext> {
 
   const profile = await currentProfile();
   if (!profile) {
-    throw new CliError("Not logged in. Run `nitrosend login --api-key ...` or set NITROSEND_API_KEY.");
+    throw new CliError("Not logged in. Run `nitrosend login --api-key ...` or set NITROSEND_API_KEY.", {
+      code: "not_authenticated",
+      exitCodeName: "permission",
+      nextAction: "Run `nitrosend login --api-key ...` or set NITROSEND_API_KEY."
+    });
   }
 
   if (profileName && profile.name !== profileName) {
-    throw new CliError(`Profile ${profileName} is not active. Profile switching will be added after bootstrap.`);
+    throw new CliError(`Profile ${profileName} is not active. Profile switching will be added after bootstrap.`, {
+      code: "profile_not_active",
+      exitCodeName: "permission"
+    });
   }
 
   return {
@@ -128,12 +136,18 @@ export async function loginWithOAuth(options: { profile: string; apiUrl?: string
 
 async function discoverOAuthMetadata(baseUrl: string): Promise<OAuthServerMetadata> {
   const protectedResource = await fetchJson<{ authorization_servers?: string[] }>(
-    `${baseUrl}/.well-known/oauth-protected-resource/mcp`
+    `${baseUrl}/.well-known/oauth-protected-resource/mcp`,
+    {},
+    { name: "oauth protected-resource", service: "OAuth protected resource metadata" }
   ).catch(() => ({ authorization_servers: undefined }));
 
   const issuer = protectedResource.authorization_servers?.[0] || baseUrl;
   const metadataUrl = `${issuer.replace(/\/$/, "")}/.well-known/oauth-authorization-server`;
-  return fetchJson<OAuthServerMetadata>(metadataUrl);
+  return fetchJson<OAuthServerMetadata>(
+    metadataUrl,
+    {},
+    { name: "oauth metadata", service: "OAuth authorization server metadata" }
+  );
 }
 
 async function registerClient(metadata: OAuthServerMetadata, redirectUri: string): Promise<string> {
@@ -141,7 +155,7 @@ async function registerClient(metadata: OAuthServerMetadata, redirectUri: string
     return process.env.NITROSEND_OAUTH_CLIENT_ID || "nitrosend-cli";
   }
 
-  const response = await fetch(metadata.registration_endpoint, {
+  const body = await fetchJson<{ client_id?: string }>(metadata.registration_endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
@@ -152,13 +166,11 @@ async function registerClient(metadata: OAuthServerMetadata, redirectUri: string
       token_endpoint_auth_method: "none",
       scope: "mcp"
     })
+  }, {
+    name: "oauth register",
+    service: "OAuth registration"
   });
 
-  if (!response.ok) {
-    throw new CliError(`OAuth client registration failed (${response.status})`);
-  }
-
-  const body = await response.json() as { client_id?: string };
   if (!body.client_id) throw new CliError("OAuth client registration response did not include client_id");
   return body.client_id;
 }
@@ -175,25 +187,17 @@ async function exchangeCode(
     redirect_uri: params.redirectUri
   });
 
-  const response = await fetch(metadata.token_endpoint, {
+  const token = await fetchJson<OAuthTokenResponse>(metadata.token_endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
     body
+  }, {
+    name: "oauth token",
+    service: "OAuth token endpoint"
   });
 
-  if (!response.ok) {
-    throw new CliError(`OAuth token exchange failed (${response.status})`);
-  }
-
-  const token = await response.json() as OAuthTokenResponse;
   if (!token.access_token) throw new CliError("OAuth token response did not include access_token");
   return token;
-}
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!response.ok) throw new CliError(`GET ${url} failed (${response.status})`);
-  return response.json() as Promise<T>;
 }
 
 function createCallbackServer(expectedState: string): Promise<{

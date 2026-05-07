@@ -7,6 +7,7 @@ import { commandResult, CommandDescriptor, CommandMeta, CommandResult, CommandSi
 import { ProjectContext } from "../context/project.js";
 import { CliError } from "../errors.js";
 import { readHistory } from "../history.js";
+import { fetchJson } from "../http.js";
 import { McpClient } from "../mcp/client.js";
 import {
   findTool,
@@ -796,11 +797,12 @@ function shellQuote(value: string): string {
 
 async function latestPublishedVersion(): Promise<string | null> {
   try {
-    const response = await fetch("https://registry.npmjs.org/@nitrosend%2fcli/latest", {
+    const payload = await fetchJson<{ version?: unknown }>("https://registry.npmjs.org/@nitrosend%2fcli/latest", {
       signal: AbortSignal.timeout(3000)
+    }, {
+      name: "npm latest",
+      service: "npm registry"
     });
-    if (!response.ok) return null;
-    const payload = await response.json() as { version?: unknown };
     return typeof payload.version === "string" ? payload.version : null;
   } catch {
     return null;

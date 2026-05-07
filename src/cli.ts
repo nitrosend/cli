@@ -9,6 +9,7 @@ import { redact } from "./redact.js";
 import { helpText } from "./runtime/help.js";
 import { assertKnownFlags, runtimeOptions } from "./runtime/options.js";
 import { resolveExecution } from "./runtime/resolve.js";
+import { createTraceStore, renderTraceLines, runWithTraceStore, traceMeta, TraceStore } from "./runtime/trace.js";
 import { RuntimeOptions } from "./runtime/types.js";
 import { enforceSafety } from "./safety/index.js";
 import { CURRENT_VERSION } from "./version/current.js";
@@ -28,67 +29,73 @@ export async function runCli(options: RunOptions): Promise<number> {
   let parsedCommand: string | undefined;
   let runtime: RuntimeOptions | undefined;
   let projectContext: ProjectContext | undefined;
+  let traceStore: TraceStore | undefined;
 
   try {
     const parsed = parseArgs(options.argv);
     assertKnownFlags(parsed.flags);
-    runtime = runtimeOptions(parsed.flags);
+    let activeRuntime = runtimeOptions(parsed.flags);
+    runtime = activeRuntime;
+    traceStore = createTraceStore(activeRuntime.trace);
 
-    if (flagBoolean(parsed.flags, "help")) {
-      stdout.write(helpText());
+    return await runWithTraceStore(traceStore, async () => {
+      if (flagBoolean(parsed.flags, "help")) {
+        stdout.write(helpText());
+        return EXIT_CODES.ok;
+      }
+
+      if (flagBoolean(parsed.flags, "version")) {
+        stdout.write(`${CURRENT_VERSION}\n`);
+        return EXIT_CODES.ok;
+      }
+
+      projectContext = await loadProjectContext(options.cwd);
+      const execution = { ...resolveExecution(parsed.positionals), flags: parsed.flags };
+      parsedCommand = execution.commandName;
+      if (activeRuntime.machine && execution.descriptor.idempotency.mode !== "none") {
+        activeRuntime = { ...activeRuntime, idempotencyKey: `cli-${Date.now().toString(36)}` };
+        runtime = activeRuntime;
+      }
+
+      if (activeRuntime.explain) {
+        const result = await explainResult(execution, activeRuntime, projectContext);
+        stdout.write(renderResult(result, { mode: activeRuntime.outputMode, color: activeRuntime.color }));
+        return EXIT_CODES.ok;
+      }
+
+      await enforceSafety(execution.descriptor, execution.rest[0], {
+        dryRun: activeRuntime.dryRun,
+        yes: activeRuntime.yes,
+        nonInteractive: activeRuntime.nonInteractive,
+        confirm: activeRuntime.confirm,
+        environment: projectContext.environment,
+        stdin: options.stdin,
+        stdout: process.stderr
+      });
+
+      const result = await executeCommand(execution, activeRuntime, projectContext);
+      result.meta.duration_ms = Math.round(performance.now() - startedAt);
+      result.meta.trace = traceMeta(traceStore, result.meta.duration_ms);
+      if (activeRuntime.trace) stderr.write(redact(renderTraceLines(result.meta.trace)));
+
+      if (execution.commandName === "completion" && activeRuntime.outputMode === "tty") {
+        stdout.write(String(result.data));
+      } else {
+        stdout.write(renderResult(result, { mode: activeRuntime.outputMode, color: activeRuntime.color }));
+      }
+
+      await recordHistory(options.argv);
       return EXIT_CODES.ok;
-    }
-
-    const [first] = parsed.positionals;
-    if (flagBoolean(parsed.flags, "version")) {
-      stdout.write(`${CURRENT_VERSION}\n`);
-      return EXIT_CODES.ok;
-    }
-
-    projectContext = await loadProjectContext(options.cwd);
-    const execution = { ...resolveExecution(parsed.positionals), flags: parsed.flags };
-    parsedCommand = execution.commandName;
-    if (runtime.machine && execution.descriptor.idempotency.mode !== "none") {
-      runtime = { ...runtime, idempotencyKey: `cli-${Date.now().toString(36)}` };
-    }
-
-    if (runtime.explain) {
-      const result = await explainResult(execution, runtime, projectContext);
-      stdout.write(renderResult(result, { mode: runtime.outputMode, color: runtime.color }));
-      return EXIT_CODES.ok;
-    }
-
-    await enforceSafety(execution.descriptor, execution.rest[0], {
-      dryRun: runtime.dryRun,
-      yes: runtime.yes,
-      nonInteractive: runtime.nonInteractive,
-      confirm: runtime.confirm,
-      environment: projectContext.environment,
-      stdin: options.stdin,
-      stdout: process.stderr
     });
-
-    const result = await executeCommand(execution, runtime, projectContext);
-    result.meta.duration_ms = Math.round(performance.now() - startedAt);
-    if (runtime.trace) {
-      result.meta.trace = [{ name: "total", duration_ms: result.meta.duration_ms }];
-      stderr.write(`trace total=${result.meta.duration_ms}ms\n`);
-    }
-
-    if (execution.commandName === "completion" && runtime.outputMode === "tty") {
-      stdout.write(String(result.data));
-    } else {
-      stdout.write(renderResult(result, { mode: runtime.outputMode, color: runtime.color }));
-    }
-
-    await recordHistory(options.argv);
-    return EXIT_CODES.ok;
   } catch (error) {
+    const durationMs = Math.round(performance.now() - startedAt);
+    const trace = traceMeta(traceStore, durationMs);
     const envelope = errorEnvelope(error, {
       command: parsedCommand,
       meta: {
         environment: projectContext?.environment,
-        duration_ms: Math.round(performance.now() - startedAt)
+        duration_ms: durationMs,
+        trace
       }
     });
     const mode = runtime?.outputMode ?? "tty";
@@ -98,6 +105,7 @@ export async function runCli(options: RunOptions): Promise<number> {
     } else {
       stderr.write(redact(rendered));
     }
+    if (runtime?.trace) stderr.write(redact(renderTraceLines(trace)));
     return exitCodeFor(error);
   }
 }
