@@ -2,7 +2,7 @@ import { parseArgs, flagBoolean, flagString } from "../args.js";
 import { loginWithApiKey, loginWithOAuth, logout, resolveAuth } from "../auth.js";
 import { readCache, writeCache } from "../cache/cache.js";
 import { currentProfile, defaultApiUrl } from "../config.js";
-import { commandNames, findDescriptor } from "../contracts/descriptors.js";
+import { COMMAND_DESCRIPTORS, commandNames, findDescriptor } from "../contracts/descriptors.js";
 import { commandResult, CommandDescriptor, CommandMeta, CommandResult, CommandSidecars } from "../contracts/types.js";
 import { ProjectContext } from "../context/project.js";
 import { CliError } from "../errors.js";
@@ -20,6 +20,7 @@ import {
 import { RuntimeOptions, CommandExecution } from "../runtime/types.js";
 import { resolveExecution, unknownCommand } from "../runtime/resolve.js";
 import { CURRENT_VERSION } from "../version/current.js";
+import { compareSemver } from "../version/semver.js";
 
 const TOOLS_CACHE_TTL_SECONDS = 900;
 const ENTITY_COMMANDS: Record<string, { entity: string; title: string; searchFilter?: string; statusFilter?: boolean }> = {
@@ -64,7 +65,7 @@ export async function executeCommand(
     case "version":
       return commandResult("version", versionData(), { meta, presentation: { type: "key_value" } });
     case "update":
-      return commandResult("update", updateData(), { meta, presentation: { type: "key_value" } });
+      return commandResult("update", await updateData(), { meta, presentation: { type: "key_value" } });
     case "describe":
       return commandResult("describe", describeCommand(execution.rest), { meta });
     case "completion":
@@ -223,13 +224,38 @@ function versionData(): Record<string, unknown> {
   };
 }
 
-function updateData(): Record<string, unknown> {
+async function updateData(): Promise<Record<string, unknown>> {
+  const latestVersion = await latestPublishedVersion();
+  const comparison = latestVersion ? compareSemver(CURRENT_VERSION, latestVersion) : null;
+  const updateCommand = "npm install -g @nitrosend/cli@latest";
+
+  if (comparison === 0) {
+    return {
+      status: "up_to_date",
+      package: "@nitrosend/cli",
+      current_version: CURRENT_VERSION,
+      latest_version: latestVersion
+    };
+  }
+
+  if (comparison !== null && comparison < 0) {
+    return {
+      status: "update_available",
+      package: "@nitrosend/cli",
+      current_version: CURRENT_VERSION,
+      latest_version: latestVersion,
+      command: updateCommand,
+      next_action: "Run the update command, then check `nitrosend --version`."
+    };
+  }
+
   return {
-    status: "manual_update_required",
+    status: "unknown",
     package: "@nitrosend/cli",
     current_version: CURRENT_VERSION,
-    command: "npm install -g @nitrosend/cli@latest",
-    next_action: "Run the command with your package manager, then check `nitrosend --version`."
+    latest_version: latestVersion,
+    command: updateCommand,
+    next_action: "Could not confirm the latest registry version. Run the update command if you want to reinstall latest."
   };
 }
 
@@ -308,7 +334,7 @@ function dashboardFromStatus(
   return {
     data: {
       profile: authState.profile || projectContext.profile || "default",
-      environment: projectContext.environment,
+      environment: dashboardEnvironment(projectContext),
       project_config: projectContext.path || null,
       status_source: options.source,
       auth: authState,
@@ -337,15 +363,10 @@ function minimalDashboard(projectContext: ProjectContext, authState: Record<stri
   return {
     data: {
       profile: authState.profile || projectContext.profile || "default",
-      environment: projectContext.environment,
+      environment: dashboardEnvironment(projectContext),
       project_config: projectContext.path || null,
-      auth: authState,
-      blockers: unauthenticated ? ["No active credentials"] : [],
-      suggested_actions: [
-        "nitrosend status",
-        "nitrosend flows list",
-        "nitrosend recent"
-      ]
+      status_source: "local",
+      auth: pick(authState, ["source", "profile", "apiUrl"])
     },
     sidecars: {
       blockers: unauthenticated ? ["No active credentials"] : [],
@@ -371,21 +392,41 @@ function nextDashboardAction(blockers: string[]): string {
   return "Run `nitrosend flows list` or `nitrosend contacts list`.";
 }
 
-function describeCommand(rest: string[]): CommandDescriptor {
+function dashboardEnvironment(projectContext: ProjectContext): string | undefined {
+  return projectContext.environment === "development" ? undefined : projectContext.environment;
+}
+
+function describeCommand(rest: string[]): CommandDescriptor | Record<string, unknown> {
   const name = rest.join(" ").trim();
   const descriptor = findDescriptor(name);
-  if (!descriptor) {
-    throw unknownCommand(name || "describe");
+  if (descriptor) return descriptor;
+
+  const commands = COMMAND_DESCRIPTORS
+    .filter((candidate) => candidate.name === name || candidate.name.startsWith(`${name} `))
+    .map((candidate) => ({
+      name: candidate.name,
+      summary: candidate.summary,
+      usage: candidate.usage
+    }));
+
+  if (commands.length > 0) {
+    return {
+      name,
+      type: "command_group",
+      commands,
+      next_action: `Run \`nitrosend describe ${commands[0].name}\` for a specific command.`
+    };
   }
-  return descriptor;
+
+  throw unknownCommand(name || "describe");
 }
 
 function completionCommand(rest: string[]): string {
   const shell = rest[0];
-  const names = commandNames();
-  if (shell === "bash") return `complete -W "${names.join(" ")}" nitrosend\n`;
-  if (shell === "zsh") return `#compdef nitrosend\n_arguments '1:command:(${names.join(" ")})'\n`;
-  if (shell === "fish") return names.map((name) => `complete -c nitrosend -a '${name}'`).join("\n") + "\n";
+  const tree = completionTree(commandNames());
+  if (shell === "bash") return bashCompletion(tree);
+  if (shell === "zsh") return zshCompletion(tree);
+  if (shell === "fish") return fishCompletion(tree);
   throw new CliError("Usage: nitrosend completion <bash|zsh|fish>", { code: "usage_error", exitCodeName: "usage" });
 }
 
@@ -675,4 +716,93 @@ function humanLabel(value: string): string {
 
 function recordLike(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+interface CompletionTree {
+  topLevel: string[];
+  byPrefix: Record<string, string[]>;
+}
+
+function completionTree(names: string[]): CompletionTree {
+  const topLevel = new Set<string>();
+  const byPrefix: Record<string, Set<string>> = {};
+  for (const name of names) {
+    const parts = name.split(" ").filter(Boolean);
+    if (parts.length === 0) continue;
+    topLevel.add(parts[0]);
+    for (let index = 1; index < parts.length; index++) {
+      const prefix = parts.slice(0, index).join(" ");
+      byPrefix[prefix] ??= new Set<string>();
+      byPrefix[prefix].add(parts[index]);
+    }
+  }
+  return {
+    topLevel: [...topLevel].sort(),
+    byPrefix: Object.fromEntries(Object.entries(byPrefix).map(([key, values]) => [key, [...values].sort()]))
+  };
+}
+
+function bashCompletion(tree: CompletionTree): string {
+  const cases = Object.entries(tree.byPrefix)
+    .map(([prefix, words]) => {
+      const parts = prefix.split(" ");
+      const condition = parts.map((part, index) => `\${COMP_WORDS[${index + 1}]} = ${shellQuote(part)}`).join(" && ");
+      return `      if [[ ${condition} ]]; then COMPREPLY=( $(compgen -W ${shellQuote(words.join(" "))} -- "$cur") ); return; fi`;
+    })
+    .join("\n");
+
+  return `_nitrosend_completion() {
+  local cur
+  COMPREPLY=()
+  cur="\${COMP_WORDS[COMP_CWORD]}"
+  if [[ "$COMP_CWORD" -eq 1 ]]; then
+    COMPREPLY=( $(compgen -W ${shellQuote(tree.topLevel.join(" "))} -- "$cur") )
+    return
+  fi
+${cases}
+}
+complete -F _nitrosend_completion nitrosend
+`;
+}
+
+function zshCompletion(tree: CompletionTree): string {
+  const top = tree.topLevel.join(" ");
+  const specs = [
+    `'1:command:(${top})'`,
+    ...Object.entries(tree.byPrefix).map(([prefix, words]) => {
+      const depth = prefix.split(" ").length + 1;
+      return `'${depth}:${prefix}:(${words.join(" ")})'`;
+    })
+  ];
+  return `#compdef nitrosend
+_arguments \\
+  ${specs.join(" \\\n  ")}
+`;
+}
+
+function fishCompletion(tree: CompletionTree): string {
+  const lines = [
+    `complete -c nitrosend -f -n '__fish_use_subcommand' -a '${tree.topLevel.join(" ")}'`
+  ];
+  for (const [prefix, words] of Object.entries(tree.byPrefix)) {
+    lines.push(`complete -c nitrosend -f -n '__fish_seen_subcommand_from ${prefix}' -a '${words.join(" ")}'`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+async function latestPublishedVersion(): Promise<string | null> {
+  try {
+    const response = await fetch("https://registry.npmjs.org/@nitrosend%2fcli/latest", {
+      signal: AbortSignal.timeout(3000)
+    });
+    if (!response.ok) return null;
+    const payload = await response.json() as { version?: unknown };
+    return typeof payload.version === "string" ? payload.version : null;
+  } catch {
+    return null;
+  }
 }

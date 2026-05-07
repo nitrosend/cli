@@ -55,8 +55,7 @@ export function runtimeOptions(flags: Record<string, string | boolean>): Runtime
     explain: flagBoolean(flags, "explain"),
     confirm: flagString(flags, "confirm"),
     profile: flagString(flags, "profile"),
-    apiUrl: flagString(flags, "api-url"),
-    idempotencyKey: machine ? `cli-${Date.now().toString(36)}` : undefined
+    apiUrl: flagString(flags, "api-url")
   };
 }
 

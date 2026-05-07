@@ -14,7 +14,8 @@ try {
   const parsed = JSON.parse(result.stdout);
   assert.equal(parsed.schema_version, 1);
   assert.equal(parsed.command, "dashboard");
-  assert.ok(Array.isArray(parsed.data.suggested_actions));
+  assert.deepEqual(parsed.sidecars.blockers, ["No active credentials"]);
+  assert.match(parsed.sidecars.next_action, /nitrosend login/);
   console.log("dashboard contract passed");
 } finally {
   rmSync(configDir, { recursive: true, force: true });

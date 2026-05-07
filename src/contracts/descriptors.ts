@@ -8,7 +8,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     name: "dashboard",
     aliases: [""],
     group: "core",
-    summary: "Show account state, blockers, and suggested next actions.",
+    summary: "Show local profile state, cached account state, blockers, and suggested next actions.",
     usage: "nitrosend",
     input_schema: emptySchema,
     output_schema: objectSchema,
@@ -29,7 +29,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     safety: { class: "mutating", supports_dry_run: false, requires_confirmation: false },
     cache: { mode: "none" },
     idempotency: { mode: "none" },
-    agent: { suitable: false, reason: "Interactive OAuth login is human-facing." }
+    agent: { suitable: true, reason: "Use --api-key for non-interactive login. Browser OAuth login is human-facing." }
   },
   {
     name: "logout",
@@ -60,7 +60,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
   {
     name: "status",
     group: "core",
-    summary: "Show live account health, onboarding state, and next actions.",
+    summary: "Show live authenticated account health, onboarding state, and next actions.",
     usage: "nitrosend status [--json]",
     input_schema: emptySchema,
     output_schema: objectSchema,
@@ -251,19 +251,19 @@ function mcpDescriptors(): CommandDescriptor[] {
 
 function entityListDescriptors(): CommandDescriptor[] {
   return [
-    ["flows list", "List flows.", "nitrosend flows list [--status <status>] [--search <text>] [--page <n>] [--per <n>]"],
-    ["campaigns list", "List campaigns.", "nitrosend campaigns list [--status <status>] [--search <text>] [--page <n>] [--per <n>]"],
-    ["contacts list", "List contacts.", "nitrosend contacts list [--query <text>] [--list-id <id>] [--page <n>] [--per <n>]"],
-    ["lists list", "List contact lists.", "nitrosend lists list [--search <text>] [--page <n>] [--per <n>]"],
-    ["templates list", "List templates.", "nitrosend templates list [--search <text>] [--page <n>] [--per <n>]"]
-  ].map(([name, summary, usage]) => ({
+    ["flows list", "List flows.", "nitrosend flows list [--status <status>] [--search <text>] [--page <n>] [--per <n>]", "nitrosend flows list --status draft --per 10"],
+    ["campaigns list", "List campaigns.", "nitrosend campaigns list [--status <status>] [--search <text>] [--page <n>] [--per <n>]", "nitrosend campaigns list --status draft --per 10"],
+    ["contacts list", "List contacts.", "nitrosend contacts list [--query <text>] [--list-id <id>] [--page <n>] [--per <n>]", "nitrosend contacts list --query alice --per 10"],
+    ["lists list", "List contact lists.", "nitrosend lists list [--search <text>] [--page <n>] [--per <n>]", "nitrosend lists list --search newsletter"],
+    ["templates list", "List templates.", "nitrosend templates list [--search <text>] [--page <n>] [--per <n>]", "nitrosend templates list --search welcome"]
+  ].map(([name, summary, usage, example]) => ({
     name,
     group: "data",
     summary,
     usage,
     input_schema: objectSchema,
     output_schema: objectSchema,
-    examples: [{ description: summary, command: usage }],
+    examples: [{ description: summary, command: example }],
     safety: { class: "read", supports_dry_run: false, requires_confirmation: false } as const,
     cache: { mode: "none" as const },
     idempotency: { mode: "none" as const },

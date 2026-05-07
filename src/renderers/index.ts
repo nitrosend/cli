@@ -59,7 +59,7 @@ function renderCsv(result: CommandResult): string {
 
 function renderTty(result: CommandResult, options: RenderOptions): string {
   const lines: string[] = [];
-  const environment = result.meta.environment ? ` [${result.meta.environment}]` : "";
+  const environment = displayEnvironment(result.meta.environment);
   lines.push(colorize(`${titleize(result.command)}${environment}`, "bold", options.color));
 
   if (result.presentation?.type === "table") {
@@ -91,7 +91,8 @@ function renderTable(data: unknown, presentation: Presentation): string {
 
 function renderPreview(result: CommandResult): string {
   const presentation = result.presentation?.type === "preview" ? result.presentation : undefined;
-  const lines = [presentation?.title || "Preview", renderKeyValue(result.data)];
+  const data = presentation?.blast_radius?.length ? omitRecordKeys(result.data, ["affected"]) : result.data;
+  const lines = [presentation?.title || "Preview", renderKeyValue(data)];
   if (presentation?.blast_radius?.length) {
     lines.push("Blast radius:", ...presentation.blast_radius.map((item) => `- ${item}`));
   }
@@ -103,7 +104,8 @@ function renderKeyValue(data: unknown): string {
   if (typeof data !== "object") return String(data);
   if (Array.isArray(data)) return data.map((item) => `- ${formatValue(item)}`).join("\n");
   return Object.entries(data as Record<string, unknown>)
-    .map(([key, value]) => `${humanize(key)}: ${formatValue(value)}`)
+    .filter(([, value]) => shouldRenderValue(value))
+    .map(([key, value]) => keyValueLine(key, value))
     .join("\n");
 }
 
@@ -139,10 +141,70 @@ function csvCell(value: unknown): string {
 
 function formatValue(value: unknown): string {
   if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "";
+    return `\n${value.map((item) => formatListItem(item, 1)).join("\n")}`;
+  }
   if (typeof value === "object") {
-    return `\n${JSON.stringify(value, null, 2).split("\n").map((line) => `  ${line}`).join("\n")}`;
+    return `\n${formatObject(value as Record<string, unknown>, 1)}`;
   }
   return String(value);
+}
+
+function keyValueLine(key: string, value: unknown): string {
+  const rendered = formatValue(value);
+  return rendered.startsWith("\n")
+    ? `${humanize(key)}:${rendered}`
+    : `${humanize(key)}: ${rendered}`;
+}
+
+function formatObject(record: Record<string, unknown>, depth: number): string {
+  return Object.entries(record)
+    .filter(([, value]) => shouldRenderValue(value))
+    .map(([key, value]) => {
+      const indent = "  ".repeat(depth);
+      const rendered = formatNestedValue(value, depth);
+      return rendered.startsWith("\n")
+        ? `${indent}${humanize(key)}:${rendered}`
+        : `${indent}${humanize(key)}: ${rendered}`;
+    })
+    .join("\n");
+}
+
+function formatNestedValue(value: unknown, depth: number): string {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "";
+    return `\n${value.map((item) => formatListItem(item, depth + 1)).join("\n")}`;
+  }
+  if (typeof value === "object" && value !== null) {
+    return `\n${formatObject(value as Record<string, unknown>, depth + 1)}`;
+  }
+  return String(value ?? "");
+}
+
+function formatListItem(value: unknown, depth: number): string {
+  const indent = "  ".repeat(depth);
+  if (typeof value === "object" && value !== null) {
+    const nested = formatObject(value as Record<string, unknown>, depth + 1);
+    return `${indent}-\n${nested}`;
+  }
+  return `${indent}- ${String(value ?? "")}`;
+}
+
+function shouldRenderValue(value: unknown): boolean {
+  if (value === null || value === undefined || value === "") return false;
+  if (Array.isArray(value) && value.length === 0) return false;
+  if (typeof value === "object" && Object.keys(value as Record<string, unknown>).length === 0) return false;
+  return true;
+}
+
+function omitRecordKeys(data: unknown, keys: string[]): unknown {
+  if (!isRecord(data)) return data;
+  return Object.fromEntries(Object.entries(data).filter(([key]) => !keys.includes(key)));
+}
+
+function displayEnvironment(environment: string | undefined): string {
+  return environment && environment !== "development" ? ` [${environment}]` : "";
 }
 
 function titleize(value: string): string {

@@ -131,7 +131,8 @@ async function discoverOAuthMetadata(baseUrl: string): Promise<OAuthServerMetada
     `${baseUrl}/.well-known/oauth-protected-resource/mcp`
   ).catch(() => ({ authorization_servers: undefined }));
 
-  const metadataUrl = protectedResource.authorization_servers?.[0] || `${baseUrl}/.well-known/oauth-authorization-server`;
+  const issuer = protectedResource.authorization_servers?.[0] || baseUrl;
+  const metadataUrl = `${issuer.replace(/\/$/, "")}/.well-known/oauth-authorization-server`;
   return fetchJson<OAuthServerMetadata>(metadataUrl);
 }
 

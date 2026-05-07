@@ -54,7 +54,8 @@ prompt would be required.
 ## Agent Mode
 
 `--machine` implies `--json --non-interactive --no-color --no-pager`. Commands
-with side effects receive an automatic idempotency key when applicable.
+with side effects receive an automatic idempotency key when applicable; read
+commands do not receive one just because `--machine` is set.
 `--explain` returns the resolved plan as data without performing side effects.
 For `mcp tools call <name>`, explain first uses cached `tools/list`
 annotations to report wrapped-tool safety and falls back to conservative
@@ -86,15 +87,16 @@ These commands call existing MCP tools internally and keep the same
 ## Release Guidance
 
 `nitrosend --version` stays a raw version string for scripts. `nitrosend version`
-and `nitrosend update` provide structured package, Node runtime, and manual npm
-update guidance for humans and agents.
+provides structured package and Node runtime details. `nitrosend update` checks
+the npm registry and returns `up_to_date`, `update_available`, or `unknown`.
 
 ## Project Context
 
 The CLI walks up from the current working directory looking for
 `.nitrosend.yml`. This file may define profile, output, API URL, and environment
-defaults. It must never contain secrets. Environment labels are shown on command
-results, and destructive production targets require an extra typed confirmation.
+defaults. It must never contain secrets. Non-default environment labels are
+shown on command results, and destructive production targets require an extra
+typed confirmation.
 
 Example:
 

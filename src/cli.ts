@@ -48,6 +48,9 @@ export async function runCli(options: RunOptions): Promise<number> {
     projectContext = await loadProjectContext(options.cwd);
     const execution = { ...resolveExecution(parsed.positionals), flags: parsed.flags };
     parsedCommand = execution.commandName;
+    if (runtime.machine && execution.descriptor.idempotency.mode !== "none") {
+      runtime = { ...runtime, idempotencyKey: `cli-${Date.now().toString(36)}` };
+    }
 
     if (runtime.explain) {
       const result = await explainResult(execution, runtime, projectContext);

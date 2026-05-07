@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { runCli } from "./cli.js";
+import { CURRENT_VERSION } from "./version/current.js";
 
 function streams() {
   let stdout = "";
@@ -36,6 +37,36 @@ test("describe returns descriptor data", async () => {
   const parsed = JSON.parse(io.stdoutText);
   assert.equal(parsed.data.name, "mcp tools list");
   assert.equal(parsed.data.safety.class, "read");
+});
+
+test("describe group names list available subcommands", async () => {
+  const io = streams();
+  const code = await runCli({ argv: ["describe", "campaigns", "--json"], stdout: io.stdout, stderr: io.stderr });
+
+  assert.equal(code, 0);
+  const parsed = JSON.parse(io.stdoutText);
+  assert.equal(parsed.data.type, "command_group");
+  assert.equal(parsed.data.commands[0].name, "campaigns list");
+});
+
+test("list command examples are runnable commands", async () => {
+  const io = streams();
+  const code = await runCli({ argv: ["describe", "campaigns", "list", "--json"], stdout: io.stdout, stderr: io.stderr });
+
+  assert.equal(code, 0);
+  const parsed = JSON.parse(io.stdoutText);
+  assert.equal(parsed.data.examples[0].command, "nitrosend campaigns list --status draft --per 10");
+  assert.doesNotMatch(parsed.data.examples[0].command, /\[/);
+});
+
+test("login descriptor supports non-interactive api key login", async () => {
+  const io = streams();
+  const code = await runCli({ argv: ["describe", "login", "--json"], stdout: io.stdout, stderr: io.stderr });
+
+  assert.equal(code, 0);
+  const parsed = JSON.parse(io.stdoutText);
+  assert.equal(parsed.data.agent.suitable, true);
+  assert.match(parsed.data.agent.reason, /--api-key/);
 });
 
 test("mcp tools call descriptor is conservative proxy safety", async () => {
@@ -132,7 +163,8 @@ test("completion emits raw shell script in tty mode", async () => {
   const code = await runCli({ argv: ["completion", "bash"], stdout: io.stdout, stderr: io.stderr });
 
   assert.equal(code, 0);
-  assert.match(io.stdoutText, /^complete -W /);
+  assert.match(io.stdoutText, /complete -F _nitrosend_completion nitrosend/);
+  assert.match(io.stdoutText, /COMP_CWORD/);
 });
 
 test("machine mode fails closed on typed confirmation", async () => {
@@ -155,6 +187,30 @@ test("dashboard works without credentials", async () => {
     assert.equal(code, 0);
     const parsed = JSON.parse(io.stdoutText);
     assert.equal(parsed.command, "dashboard");
+    assert.equal(parsed.data.suggested_actions, undefined);
+    assert.deepEqual(parsed.sidecars.blockers, ["No active credentials"]);
+  } finally {
+    if (previous === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("dashboard human output is blocker-aware and does not duplicate sidecars", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-dashboard-human-"));
+  const previous = process.env.NITROSEND_CONFIG_DIR;
+  process.env.NITROSEND_CONFIG_DIR = dir;
+  try {
+    const io = streams();
+    const code = await runCli({ argv: ["--no-color"], stdout: io.stdout, stderr: io.stderr });
+    assert.equal(code, 0);
+    assert.match(io.stdoutText, /^Dashboard\n/);
+    assert.doesNotMatch(io.stdoutText, /\[development\]/);
+    assert.doesNotMatch(io.stdoutText, /^Environment:/m);
+    assert.doesNotMatch(io.stdoutText, /Project config:\s*$/m);
+    assert.doesNotMatch(io.stdoutText, /nitrosend status/);
+    assert.equal((io.stdoutText.match(/^Blockers:/gm) || []).length, 1);
+    assert.match(io.stdoutText, /nitrosend login --api-key/);
   } finally {
     if (previous === undefined) delete process.env.NITROSEND_CONFIG_DIR;
     else process.env.NITROSEND_CONFIG_DIR = previous;
@@ -323,23 +379,48 @@ test("entity list commands call nitro_query and render rows", async () => {
 });
 
 test("version and update commands provide release guidance", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ version: CURRENT_VERSION }), { status: 200 });
   const versionIo = streams();
-  const versionCode = await runCli({ argv: ["version", "--json"], stdout: versionIo.stdout, stderr: versionIo.stderr });
-  assert.equal(versionCode, 0);
-  const version = JSON.parse(versionIo.stdoutText);
-  assert.equal(version.data.package, "@nitrosend/cli");
-  assert.ok(version.data.update_command.includes("@nitrosend/cli@latest"));
+  try {
+    const versionCode = await runCli({ argv: ["version", "--json"], stdout: versionIo.stdout, stderr: versionIo.stderr });
+    assert.equal(versionCode, 0);
+    const version = JSON.parse(versionIo.stdoutText);
+    assert.equal(version.data.package, "@nitrosend/cli");
+    assert.ok(version.data.update_command.includes("@nitrosend/cli@latest"));
 
-  const rawIo = streams();
-  const rawCode = await runCli({ argv: ["--version"], stdout: rawIo.stdout, stderr: rawIo.stderr });
-  assert.equal(rawCode, 0);
-  assert.match(rawIo.stdoutText, /^\d+\.\d+\.\d+/);
+    const rawIo = streams();
+    const rawCode = await runCli({ argv: ["--version"], stdout: rawIo.stdout, stderr: rawIo.stderr });
+    assert.equal(rawCode, 0);
+    assert.match(rawIo.stdoutText, /^\d+\.\d+\.\d+/);
 
-  const updateIo = streams();
-  const updateCode = await runCli({ argv: ["update", "--json"], stdout: updateIo.stdout, stderr: updateIo.stderr });
-  assert.equal(updateCode, 0);
-  const update = JSON.parse(updateIo.stdoutText);
-  assert.equal(update.data.status, "manual_update_required");
+    const updateIo = streams();
+    const updateCode = await runCli({ argv: ["update", "--json"], stdout: updateIo.stdout, stderr: updateIo.stderr });
+    assert.equal(updateCode, 0);
+    const update = JSON.parse(updateIo.stdoutText);
+    assert.equal(update.data.status, "up_to_date");
+    assert.equal(update.data.latest_version, CURRENT_VERSION);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("machine mode does not assign idempotency keys to read commands", async () => {
+  const io = streams();
+  const code = await runCli({ argv: ["version", "--machine"], stdout: io.stdout, stderr: io.stderr });
+
+  assert.equal(code, 0);
+  const parsed = JSON.parse(io.stdoutText);
+  assert.equal(parsed.meta.idempotency_key, undefined);
+});
+
+test("fixture preview human output avoids duplicate affected blast radius", async () => {
+  const io = streams();
+  const code = await runCli({ argv: ["fixture", "destroy", "demo", "--dry-run"], stdout: io.stdout, stderr: io.stderr });
+
+  assert.equal(code, 0);
+  assert.doesNotMatch(io.stdoutText, /^Affected:/m);
+  assert.match(io.stdoutText, /^Blast radius:/m);
 });
 
 test("redo replays read-safe commands", async () => {
