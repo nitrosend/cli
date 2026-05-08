@@ -1,7 +1,32 @@
 {
   "name": "@nitrosend/cli",
-  "version": "0.2.5",
-  "description": "Command-line interface for Nitrosend",
+  "version": "0.2.7",
+  "description": "Send email and SMS, run flows and campaigns, and call Nitrosend MCP tools from the terminal.",
+  "keywords": [
+    "nitrosend",
+    "cli",
+    "email",
+    "email-marketing",
+    "sms",
+    "marketing-automation",
+    "transactional-email",
+    "campaigns",
+    "automation",
+    "contacts",
+    "mcp",
+    "model-context-protocol",
+    "ai-agent",
+    "agentic",
+    "claude"
+  ],
+  "homepage": "https://nitrosend.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nitrosend/cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nitrosend/cli/issues"
+  },
   "license": "MIT",
   "type": "module",
   "bin": {
