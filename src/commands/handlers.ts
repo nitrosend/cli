@@ -328,7 +328,7 @@ function dashboardFromStatus(
   const firstSendComplete = completed(onboarding.first_send);
   const blockers: string[] = [];
 
-  if (firstSendComplete === false) blockers.push("first_send is not completed");
+  if (firstSendComplete === false) blockers.push("Onboarding setup is not completed");
   if (account.using_sandbox === true) blockers.push("Sandbox sender is active");
   if (provider.configured === false) blockers.push("Email provider is not fully configured");
 
@@ -386,8 +386,8 @@ function dashboardCacheKey(authState: Record<string, unknown>, projectContext: P
 }
 
 function nextDashboardAction(blockers: string[]): string {
-  if (blockers.some((blocker) => blocker.includes("first_send"))) {
-    return "Run `nitrosend status` and complete the first-send setup.";
+  if (blockers.some((blocker) => blocker.toLowerCase().includes("onboarding"))) {
+    return "Run `nitrosend status` and complete onboarding setup.";
   }
   if (blockers.length > 0) return "Run `nitrosend status --json` for setup details.";
   return "Run `nitrosend flows list` or `nitrosend contacts list`.";

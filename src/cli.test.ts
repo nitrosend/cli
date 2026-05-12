@@ -308,7 +308,7 @@ test("dashboard uses live MCP status when credentials exist", async () => {
     const parsed = JSON.parse(io.stdoutText);
     assert.equal(parsed.data.status_source, "live");
     assert.equal(parsed.data.onboarding.first_send, false);
-    assert.ok(parsed.sidecars.blockers.includes("first_send is not completed"));
+    assert.ok(parsed.sidecars.blockers.includes("Onboarding setup is not completed"));
   } finally {
     globalThis.fetch = previousFetch;
     if (previousConfig === undefined) delete process.env.NITROSEND_CONFIG_DIR;
