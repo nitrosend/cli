@@ -1,6 +1,6 @@
 {
   "name": "@nitrosend/cli",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "Send email and SMS, run flows and campaigns, and call Nitrosend MCP tools from the terminal.",
   "keywords": [
     "nitrosend",
