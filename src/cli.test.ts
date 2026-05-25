@@ -100,15 +100,15 @@ test("explain includes inferred wrapped MCP tool safety", async () => {
   const io = streams();
   try {
     const code = await runCli({
-      argv: ["mcp", "tools", "call", "nitro_send_message", "--explain", "--json"],
+      argv: ["mcp", "tools", "call", "nitro_control_delivery", "--explain", "--json"],
       stdout: io.stdout,
       stderr: io.stderr
     });
 
     assert.equal(code, 0);
     const parsed = JSON.parse(io.stdoutText);
-    assert.equal(parsed.data.wrapped_tool_safety.name, "nitro_send_message");
-    assert.equal(parsed.data.wrapped_tool_safety.safety_class, "external-effect");
+    assert.equal(parsed.data.wrapped_tool_safety.name, "nitro_control_delivery");
+    assert.equal(parsed.data.wrapped_tool_safety.safety_class, "destructive");
     assert.equal(parsed.data.wrapped_tool_safety.source, "name_pattern");
   } finally {
     if (previous === undefined) delete process.env.NITROSEND_CONFIG_DIR;
@@ -143,7 +143,7 @@ test("explain uses cached MCP tool annotations when credentials exist", async ()
     id: 1,
     result: {
       tools: [{
-        name: "nitro_send_message",
+        name: "nitro_control_delivery",
         annotations: { destructiveHint: true, readOnlyHint: false }
       }]
     }
@@ -152,7 +152,7 @@ test("explain uses cached MCP tool annotations when credentials exist", async ()
   try {
     const io = streams();
     const code = await runCli({
-      argv: ["mcp", "tools", "call", "nitro_send_message", "--explain", "--json"],
+      argv: ["mcp", "tools", "call", "nitro_control_delivery", "--explain", "--json"],
       stdout: io.stdout,
       stderr: io.stderr
     });

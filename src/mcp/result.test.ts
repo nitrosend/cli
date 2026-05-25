@@ -48,8 +48,8 @@ test("parses successful tool JSON text content", () => {
 
 test("maps MCP annotations and names to existing safety classes", () => {
   assert.equal(safetyClassFromTool({ name: "nitro_get_status", annotations: { readOnlyHint: true } }), "read");
-  assert.equal(safetyClassFromTool({ name: "nitro_send_message", annotations: { destructiveHint: true } }), "destructive");
-  assert.equal(safetyClassFromToolName("nitro_send_message"), "external-effect");
+  assert.equal(safetyClassFromTool({ name: "nitro_control_delivery", annotations: { destructiveHint: true } }), "destructive");
+  assert.equal(safetyClassFromToolName("nitro_send_test_message"), "external-effect");
   assert.equal(safetyClassFromToolName("nitro_manage_billing"), "billing");
   assert.equal(safetyClassFromToolName("nitro_configure_providers"), "provider-credential");
 });

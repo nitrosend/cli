@@ -1,6 +1,6 @@
 # @nitrosend/cli
 
-The Nitrosend command-line interface. Send email and SMS, run flows and campaigns, query contacts, and inspect account state — from your terminal or a CI pipeline.
+The Nitrosend command-line interface. Draft campaigns, send tests, run flows, query contacts, and inspect account state — from your terminal or a CI pipeline.
 
 All plans, including free plans, have full access to Nitrosend MCP/API/CLI. The CLI is not a paid-plan feature; plan limits apply to usage volume and paid add-ons.
 
@@ -44,8 +44,8 @@ The CLI exposes the full Nitrosend MCP surface — every tool an AI agent can ca
 
 ```bash
 nitrosend mcp tools list
-nitrosend mcp tools call nitro_send_message --args '{...}'
 nitrosend mcp tools call nitro_compose_campaign --args '{...}'
+nitrosend mcp tools call nitro_send_test_message --args '{...}'
 nitrosend mcp tools call nitro_get_status --args '{"include":["account"]}'
 ```
 
