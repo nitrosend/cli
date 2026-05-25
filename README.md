@@ -2,6 +2,8 @@
 
 The Nitrosend command-line interface. Send email and SMS, run flows and campaigns, query contacts, and inspect account state — from your terminal or a CI pipeline.
 
+All plans, including free plans, have full access to Nitrosend MCP/API/CLI. The CLI is not a paid-plan feature; plan limits apply to usage volume and paid add-ons.
+
 ```bash
 npm install -g @nitrosend/cli
 nitrosend login
