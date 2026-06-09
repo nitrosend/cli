@@ -341,7 +341,7 @@ function dashboardFromStatus(
       auth: authState,
       account: pick(account, ["tier", "can_send", "contact_count", "flow_count", "campaign_count", "using_sandbox"]),
       onboarding: {
-        brand_setup: completed(onboarding.brand_setup),
+        brand_kit_setup: completed(onboarding.brand_kit_setup),
         domain_verified: completed(onboarding.domain_verified),
         first_contact: completed(onboarding.first_contact),
         first_send: firstSendComplete
