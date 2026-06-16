@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
 import { ExitCodeName } from "./contracts/exit-codes.js";
 import { CliError } from "./errors.js";
 import { redact } from "./redact.js";
@@ -80,6 +83,93 @@ export async function fetchJson<T>(
   const parsed = parseJsonBody<T>(response, options.service);
   if (!response.ok) throw httpError(response, parsed);
   return parsed;
+}
+
+export interface DirectImportOptions {
+  apiUrl: string;
+  token: string;
+  filePath: string;
+  listId?: number;
+  fetcher?: typeof fetch;
+}
+
+export interface ImportGuardrail {
+  tier?: string;
+  status?: string;
+  contact_us_ceiling?: number;
+  sends_held?: boolean;
+}
+
+export interface ImportResult {
+  id: number;
+  status: string;
+  total_rows?: number | null;
+  success_rows?: number | null;
+  failed_rows?: number | null;
+  guardrail?: ImportGuardrail;
+}
+
+interface DirectUploadResponse {
+  signed_id: string;
+  direct_upload: {
+    url: string;
+    headers?: Record<string, string>;
+  };
+}
+
+export async function uploadContactsImport(options: DirectImportOptions): Promise<ImportResult> {
+  const bytes = await readFile(options.filePath);
+  const checksum = createHash("md5").update(bytes).digest("base64");
+  const apiBase = restApiBase(options.apiUrl);
+  const authHeaders = {
+    Authorization: `Bearer ${options.token}`,
+    Accept: "application/json",
+    "Content-Type": "application/json"
+  };
+
+  const directUpload = await fetchJson<DirectUploadResponse>(`${apiBase}/v1/direct_uploads`, {
+    method: "POST",
+    headers: authHeaders,
+    body: JSON.stringify({
+      purpose: "import",
+      blob: {
+        filename: basename(options.filePath),
+        byte_size: bytes.byteLength,
+        checksum,
+        content_type: "text/csv"
+      }
+    })
+  }, { fetcher: options.fetcher, name: "POST direct upload", service: "Nitrosend API" });
+
+  const uploadHeaders = new Headers(directUpload.direct_upload.headers || {});
+  uploadHeaders.set("Content-MD5", checksum);
+
+  const putResponse = await fetchText(directUpload.direct_upload.url, {
+    method: "PUT",
+    headers: uploadHeaders,
+    body: bytes
+  }, { fetcher: options.fetcher, name: "PUT direct upload", service: "Active Storage", bodyPreview: "errors" });
+  if (!putResponse.ok) throw httpError(putResponse);
+
+  const payload: Record<string, unknown> = {
+    signed_id: directUpload.signed_id,
+    resource: "contacts"
+  };
+  if (options.listId !== undefined) payload.options = { list_ids: [options.listId] };
+
+  return fetchJson<ImportResult>(`${apiBase}/v1/my/imports`, {
+    method: "POST",
+    headers: authHeaders,
+    body: JSON.stringify(payload)
+  }, { fetcher: options.fetcher, name: "POST create import", service: "Nitrosend API" });
+}
+
+function restApiBase(apiUrl: string): string {
+  const url = new URL(apiUrl);
+  url.pathname = url.pathname.replace(/\/mcp\/?$/, "");
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/$/, "");
 }
 
 export function parseJsonBody<T>(response: HttpTextResponse, service = "Nitrosend API"): T {

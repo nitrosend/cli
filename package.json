@@ -1,6 +1,6 @@
 {
   "name": "@nitrosend/cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Draft campaigns, send tests, run flows, and call Nitrosend MCP tools from the terminal.",
   "keywords": [
     "nitrosend",

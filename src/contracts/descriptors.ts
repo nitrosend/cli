@@ -60,8 +60,8 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     idempotency: { mode: "none" },
     agent: { suitable: true }
   },
-  {
-    name: "status",
+	  {
+	    name: "status",
     group: "core",
     summary: "Show live authenticated account health, onboarding state, and next actions.",
     usage: "nitrosend status [--json]",
@@ -71,9 +71,22 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
     cache: { mode: "read-through", ttl_seconds: 300 },
     idempotency: { mode: "none" },
+	    agent: { suitable: true }
+	  },
+  {
+    name: "contacts import",
+    group: "contacts",
+    summary: "Direct-upload a CSV file and create a contact import.",
+    usage: "nitrosend contacts import <file> --list-id <id> [--json]",
+    input_schema: objectSchema,
+    output_schema: objectSchema,
+    examples: [{ description: "Import contacts into a list", command: "nitrosend contacts import ./contacts.csv --list-id 88" }],
+    safety: { class: "mutating", supports_dry_run: true, requires_confirmation: false },
+    cache: { mode: "none" },
+    idempotency: { mode: "none" },
     agent: { suitable: true }
   },
-  ...entityListDescriptors(),
+	  ...entityListDescriptors(),
   {
     name: "describe",
     group: "core",

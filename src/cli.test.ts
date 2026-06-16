@@ -466,6 +466,81 @@ test("entity list commands call nitro_query and render rows", async () => {
   }
 });
 
+test("contacts import command direct uploads and renders guardrail", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-import-"));
+  const previousConfig = process.env.NITROSEND_CONFIG_DIR;
+  const previousFetch = globalThis.fetch;
+  process.env.NITROSEND_CONFIG_DIR = dir;
+  const file = join(dir, "contacts.csv");
+  await writeFile(file, "Email\nalice@example.com\n");
+
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "profiles.json"), JSON.stringify({
+    currentProfile: "default",
+    profiles: {
+      default: {
+        name: "default",
+        apiUrl: "https://api.example.test/mcp",
+        token: "nskey_test_abc123",
+        tokenType: "api_key"
+      }
+    }
+  }));
+
+  const calls: string[] = [];
+  globalThis.fetch = async (url, init) => {
+    const requestUrl = String(url);
+    calls.push(`${init?.method || "GET"} ${requestUrl}`);
+    if (requestUrl.endsWith("/v1/direct_uploads")) {
+      return new Response(JSON.stringify({
+        signed_id: "signed-blob",
+        direct_upload: {
+          url: "https://s3.example.test/upload",
+          headers: { "Content-Type": "text/csv" }
+        }
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (requestUrl === "https://s3.example.test/upload") {
+      return new Response("", { status: 200 });
+    }
+    if (requestUrl.endsWith("/v1/my/imports")) {
+      const body = JSON.parse(String(init?.body));
+      assert.deepEqual(body.options, { list_ids: [88] });
+      return new Response(JSON.stringify({
+        id: 42,
+        status: "pending",
+        guardrail: { tier: "hold_sends", status: "requires_review", sends_held: true }
+      }), { status: 201, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`unexpected URL ${requestUrl}`);
+  };
+
+  try {
+    const io = streams();
+    const code = await runCli({
+      argv: ["contacts", "import", file, "--list-id", "88", "--json"],
+      stdout: io.stdout,
+      stderr: io.stderr
+    });
+
+    assert.equal(code, 0);
+    const parsed = JSON.parse(io.stdoutText);
+    assert.equal(parsed.command, "contacts import");
+    assert.equal(parsed.data.guardrail_tier, "hold_sends");
+    assert.equal(parsed.data.guardrail_status, "requires_review");
+    assert.deepEqual(calls, [
+      "POST https://api.example.test/v1/direct_uploads",
+      "PUT https://s3.example.test/upload",
+      "POST https://api.example.test/v1/my/imports"
+    ]);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousConfig === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previousConfig;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("version and update commands provide release guidance", async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ version: CURRENT_VERSION }), { status: 200 });

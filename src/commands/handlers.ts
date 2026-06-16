@@ -7,7 +7,7 @@ import { commandResult, CommandDescriptor, CommandMeta, CommandResult, CommandSi
 import { ProjectContext } from "../context/project.js";
 import { CliError } from "../errors.js";
 import { readHistory } from "../history.js";
-import { fetchJson } from "../http.js";
+import { uploadContactsImport, fetchJson } from "../http.js";
 import { McpClient } from "../mcp/client.js";
 import {
   findTool,
@@ -65,6 +65,11 @@ export async function executeCommand(
       return commandResult("status", await statusCommand(runtime), { meta, presentation: { type: "key_value" } });
     case "version":
       return commandResult("version", versionData(), { meta, presentation: { type: "key_value" } });
+    case "contacts import":
+      return commandResult("contacts import", await contactsImportCommand(execution, runtime), {
+        meta,
+        presentation: { type: "key_value" }
+      });
     case "update":
       return commandResult("update", await updateData(), { meta, presentation: { type: "key_value" } });
     case "describe":
@@ -102,6 +107,59 @@ export async function executeCommand(
       }
       throw new CliError(`No handler for ${execution.commandName}`, { code: "handler_missing", exitCodeName: "internal" });
   }
+}
+
+async function contactsImportCommand(
+  execution: CommandExecution,
+  runtime: RuntimeOptions
+): Promise<Record<string, unknown>> {
+  const parsed = parseArgs(execution.rest);
+  const flags = { ...execution.flags, ...parsed.flags };
+  const filePath = parsed.positionals[0];
+  if (!filePath) {
+    throw new CliError("Missing import file path.", {
+      code: "missing_file",
+      exitCodeName: "usage",
+      nextAction: "Run `nitrosend contacts import ./contacts.csv --list-id <id>`."
+    });
+  }
+
+  const listId = integerFlag(flags, "list-id") ?? integerFlag(flags, "list");
+  if (listId === undefined) {
+    throw new CliError("Missing list id.", {
+      code: "missing_list_id",
+      exitCodeName: "usage",
+      nextAction: "Pass `--list-id <id>`."
+    });
+  }
+
+  if (runtime.dryRun) {
+    return {
+      status: "dry_run",
+      file: filePath,
+      list_id: listId,
+      upload: "skipped"
+    };
+  }
+
+  const auth = await resolveAuth(runtime.profile);
+  const result = await uploadContactsImport({
+    apiUrl: runtime.apiUrl || auth.apiUrl,
+    token: auth.token,
+    filePath,
+    listId
+  });
+
+  return {
+    id: result.id,
+    status: result.status,
+    total_rows: result.total_rows,
+    success_rows: result.success_rows,
+    failed_rows: result.failed_rows,
+    guardrail_tier: result.guardrail?.tier,
+    guardrail_status: result.guardrail?.status,
+    sends_held: result.guardrail?.sends_held
+  };
 }
 
 export async function explainResult(execution: CommandExecution, runtime: RuntimeOptions, projectContext: ProjectContext) {

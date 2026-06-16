@@ -31,7 +31,8 @@ const GLOBAL_FLAGS = new Set([
   "status",
   "search",
   "query",
-  "list-id"
+  "list-id",
+  "list"
 ]);
 
 export function runtimeOptions(flags: Record<string, string | boolean>): RuntimeOptions {
