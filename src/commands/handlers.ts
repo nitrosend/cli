@@ -29,7 +29,8 @@ const ENTITY_COMMANDS: Record<string, { entity: string; title: string; searchFil
   "campaigns list": { entity: "campaigns", title: "Campaigns", searchFilter: "search", statusFilter: true },
   "contacts list": { entity: "contacts", title: "Contacts", searchFilter: "query" },
   "lists list": { entity: "lists", title: "Lists", searchFilter: "name" },
-  "templates list": { entity: "templates", title: "Templates", searchFilter: "subject" }
+  "templates list": { entity: "templates", title: "Templates", searchFilter: "subject" },
+  "suppressions list": { entity: "suppressions", title: "Suppressions" }
 };
 
 export async function executeCommand(
@@ -248,10 +249,20 @@ async function entityListCommand(
   const search = flagString(execution.flags, "search") || flagString(execution.flags, "query");
   const status = flagString(execution.flags, "status");
   const listId = integerFlag(execution.flags, "list-id");
+  const email = flagString(execution.flags, "email");
+  const reason = flagString(execution.flags, "reason");
+  const sourceProvider = flagString(execution.flags, "source-provider");
+  const active = optionalBooleanFlag(execution.flags, "active");
 
   if (search && config.searchFilter) filters[config.searchFilter] = search;
   if (status && config.statusFilter) filters.status = status;
   if (listId !== undefined && config.entity === "contacts") filters.list_id = listId;
+  if (config.entity === "suppressions") {
+    if (email) filters.email = email;
+    if (reason) filters.reason = reason;
+    if (sourceProvider) filters.source_provider = sourceProvider;
+    if (active !== undefined) filters.active = active;
+  }
 
   const result = await callMcpResult(runtime, "nitro_query", {
     entity: config.entity,
@@ -757,13 +768,25 @@ function integerFlag(flags: Record<string, string | boolean>, name: string): num
   return parsed;
 }
 
+function optionalBooleanFlag(flags: Record<string, string | boolean>, name: string): boolean | undefined {
+  const value = flagString(flags, name);
+  if (value === undefined) return undefined;
+  if (["true", "1", "yes"].includes(value.toLowerCase())) return true;
+  if (["false", "0", "no"].includes(value.toLowerCase())) return false;
+  throw new CliError(`--${name} must be true or false`, {
+    code: "invalid_boolean_flag",
+    exitCodeName: "data"
+  });
+}
+
 function tableColumnsFor(entity: string, rows: Array<Record<string, unknown>>) {
   const preferred: Record<string, string[]> = {
     flows: ["id", "name", "status", "approval_state", "trigger_event", "step_count"],
     campaigns: ["id", "name", "status", "sent_count", "created_at"],
     contacts: ["id", "email", "first_name", "last_name", "subscribed_email"],
     lists: ["id", "name", "contact_count", "created_at"],
-    templates: ["id", "name", "subject", "created_at"]
+    templates: ["id", "name", "subject", "created_at"],
+    suppressions: ["id", "email", "reason", "source_provider", "provider_diagnostic", "created_at"]
   };
   const keys = preferred[entity] || Object.keys(rows[0] || {}).slice(0, 6);
   return keys.map((key) => ({ key, label: humanLabel(key) }));

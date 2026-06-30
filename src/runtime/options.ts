@@ -32,7 +32,11 @@ const GLOBAL_FLAGS = new Set([
   "search",
   "query",
   "list-id",
-  "list"
+  "list",
+  "email",
+  "reason",
+  "source-provider",
+  "active"
 ]);
 
 export function runtimeOptions(flags: Record<string, string | boolean>): RuntimeOptions {

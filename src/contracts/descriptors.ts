@@ -271,7 +271,8 @@ function entityListDescriptors(): CommandDescriptor[] {
     ["campaigns list", "List campaigns.", "nitrosend campaigns list [--status <status>] [--search <text>] [--page <n>] [--per <n>]", "nitrosend campaigns list --status draft --per 10"],
     ["contacts list", "List contacts.", "nitrosend contacts list [--query <text>] [--list-id <id>] [--page <n>] [--per <n>]", "nitrosend contacts list --query alice --per 10"],
     ["lists list", "List contact lists.", "nitrosend lists list [--search <text>] [--page <n>] [--per <n>]", "nitrosend lists list --search newsletter"],
-    ["templates list", "List templates.", "nitrosend templates list [--search <text>] [--page <n>] [--per <n>]", "nitrosend templates list --search welcome"]
+    ["templates list", "List templates.", "nitrosend templates list [--search <text>] [--page <n>] [--per <n>]", "nitrosend templates list --search welcome"],
+    ["suppressions list", "List account suppressions with bounce diagnostics.", "nitrosend suppressions list [--email <email>] [--reason <reason>] [--active <true|false>] [--page <n>] [--per <n>]", "nitrosend suppressions list --reason hard_bounce --per 10"]
   ].map(([name, summary, usage, example]) => ({
     name,
     group: "data",

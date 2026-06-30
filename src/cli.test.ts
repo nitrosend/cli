@@ -466,6 +466,83 @@ test("entity list commands call nitro_query and render rows", async () => {
   }
 });
 
+test("suppressions list maps filters to nitro_query", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-suppressions-list-"));
+  const previousConfig = process.env.NITROSEND_CONFIG_DIR;
+  const previousFetch = globalThis.fetch;
+  process.env.NITROSEND_CONFIG_DIR = dir;
+
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "profiles.json"), JSON.stringify({
+    currentProfile: "default",
+    profiles: {
+      default: {
+        name: "default",
+        apiUrl: "https://api.example.test/mcp",
+        token: "nskey_test_abc123",
+        tokenType: "api_key"
+      }
+    }
+  }));
+
+  let requestBody = "";
+  globalThis.fetch = async (_url, init) => {
+    requestBody = String(init?.body);
+    return new Response(JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            result: {
+              items: [{
+                id: 1,
+                email: "user@example.com",
+                reason: "hard_bounce",
+                provider_diagnostic: "550 invalid recipient"
+              }],
+              pagination: { page: 1, per: 10, total: 1 }
+            }
+          })
+        }]
+      }
+    }), { status: 200 });
+  };
+
+  try {
+    const io = streams();
+    const code = await runCli({
+      argv: [
+        "suppressions", "list",
+        "--reason", "hard_bounce",
+        "--source-provider", "sendgrid",
+        "--active", "false",
+        "--per", "10",
+        "--json"
+      ],
+      stdout: io.stdout,
+      stderr: io.stderr
+    });
+    assert.equal(code, 0);
+    const parsed = JSON.parse(io.stdoutText);
+    assert.equal(parsed.command, "suppressions list");
+    assert.equal(parsed.data.rows[0].provider_diagnostic, "550 invalid recipient");
+    const body = JSON.parse(requestBody);
+    assert.equal(body.params.name, "nitro_query");
+    assert.deepEqual(body.params.arguments.filters, {
+      reason: "hard_bounce",
+      source_provider: "sendgrid",
+      active: false
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousConfig === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previousConfig;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("contacts import command direct uploads and renders guardrail", async () => {
   const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-import-"));
   const previousConfig = process.env.NITROSEND_CONFIG_DIR;
