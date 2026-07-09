@@ -36,7 +36,9 @@ const GLOBAL_FLAGS = new Set([
   "email",
   "reason",
   "source-provider",
-  "active"
+  "active",
+  "inbox-id",
+  "message-limit"
 ]);
 
 export function runtimeOptions(flags: Record<string, string | boolean>): RuntimeOptions {

@@ -543,6 +543,148 @@ test("suppressions list maps filters to nitro_query", async () => {
   }
 });
 
+test("inbox list maps filters to nitro_inbox mailbox command", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-inbox-list-"));
+  const previousConfig = process.env.NITROSEND_CONFIG_DIR;
+  const previousFetch = globalThis.fetch;
+  process.env.NITROSEND_CONFIG_DIR = dir;
+
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "profiles.json"), JSON.stringify({
+    currentProfile: "default",
+    profiles: {
+      default: {
+        name: "default",
+        apiUrl: "https://api.example.test/mcp",
+        token: "nskey_test_abc123",
+        tokenType: "api_key"
+      }
+    }
+  }));
+
+  let requestBody = "";
+  globalThis.fetch = async (_url, init) => {
+    requestBody = String(init?.body);
+    return new Response(JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            result: {
+              items: [{
+                conversation_id: 122,
+                subject: "Sourcey billing question",
+                external_participant_address: "sender@example.net",
+                status: "open",
+                last_message_at: "2026-07-09T04:00:00Z"
+              }],
+              counts: { open: 1 },
+              pagination: { page: 1, per: 10, total: 1 }
+            }
+          })
+        }]
+      }
+    }), { status: 200 });
+  };
+
+  try {
+    const io = streams();
+    const code = await runCli({
+      argv: ["inbox", "list", "--query", "sourcey", "--status", "open", "--inbox-id", "17", "--per", "10", "--json"],
+      stdout: io.stdout,
+      stderr: io.stderr
+    });
+    assert.equal(code, 0);
+    const parsed = JSON.parse(io.stdoutText);
+    assert.equal(parsed.command, "inbox list");
+    assert.equal(parsed.data.rows[0].conversation_id, 122);
+    const body = JSON.parse(requestBody);
+    assert.equal(body.params.name, "nitro_inbox");
+    assert.deepEqual(body.params.arguments, {
+      command: "list_mailbox",
+      query: "sourcey",
+      status: "open",
+      inbox_id: 17,
+      per: 10
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousConfig === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previousConfig;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("inbox get maps to nitro_inbox get_thread command", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-inbox-get-"));
+  const previousConfig = process.env.NITROSEND_CONFIG_DIR;
+  const previousFetch = globalThis.fetch;
+  process.env.NITROSEND_CONFIG_DIR = dir;
+
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "profiles.json"), JSON.stringify({
+    currentProfile: "default",
+    profiles: {
+      default: {
+        name: "default",
+        apiUrl: "https://api.example.test/mcp",
+        token: "nskey_test_abc123",
+        tokenType: "api_key"
+      }
+    }
+  }));
+
+  let requestBody = "";
+  globalThis.fetch = async (_url, init) => {
+    requestBody = String(init?.body);
+    return new Response(JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            result: {
+              thread: {
+                conversation_id: 122,
+                subject: "Sourcey billing question",
+                messages: [{ direction: "inbound", text_body: "Need help", html_body: null }]
+              }
+            }
+          })
+        }]
+      }
+    }), { status: 200 });
+  };
+
+  try {
+    const io = streams();
+    const code = await runCli({
+      argv: ["inbox", "get", "122", "--message-limit", "5", "--json"],
+      stdout: io.stdout,
+      stderr: io.stderr
+    });
+    assert.equal(code, 0);
+    const parsed = JSON.parse(io.stdoutText);
+    assert.equal(parsed.command, "inbox get");
+    assert.equal(parsed.data.thread.conversation_id, 122);
+    const body = JSON.parse(requestBody);
+    assert.equal(body.params.name, "nitro_inbox");
+    assert.deepEqual(body.params.arguments, {
+      command: "get_thread",
+      conversation_id: 122,
+      message_limit: 5
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousConfig === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previousConfig;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("contacts import command direct uploads and renders guardrail", async () => {
   const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-import-"));
   const previousConfig = process.env.NITROSEND_CONFIG_DIR;

@@ -87,6 +87,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     agent: { suitable: true }
   },
 	  ...entityListDescriptors(),
+  ...inboxDescriptors(),
   {
     name: "describe",
     group: "core",
@@ -286,4 +287,35 @@ function entityListDescriptors(): CommandDescriptor[] {
     idempotency: { mode: "none" as const },
     agent: { suitable: true }
   }));
+}
+
+function inboxDescriptors(): CommandDescriptor[] {
+  return [
+    {
+      name: "inbox list",
+      group: "inbox",
+      summary: "List agent inbox mailbox conversations.",
+      usage: "nitrosend inbox list [--query <text>] [--inbox-id <id>] [--status <status>] [--page <n>] [--per <n>]",
+      input_schema: objectSchema,
+      output_schema: objectSchema,
+      examples: [{ description: "Search inbox conversations", command: "nitrosend inbox list --query sourcey --per 10" }],
+      safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
+      cache: { mode: "none" },
+      idempotency: { mode: "none" },
+      agent: { suitable: true }
+    },
+    {
+      name: "inbox get",
+      group: "inbox",
+      summary: "Read one sanitized agent inbox thread.",
+      usage: "nitrosend inbox get <conversation-id> [--message-limit <n>]",
+      input_schema: objectSchema,
+      output_schema: objectSchema,
+      examples: [{ description: "Read a thread", command: "nitrosend inbox get 123 --message-limit 10" }],
+      safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
+      cache: { mode: "none" },
+      idempotency: { mode: "none" },
+      agent: { suitable: true }
+    }
+  ];
 }

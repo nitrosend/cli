@@ -71,6 +71,10 @@ export async function executeCommand(
         meta,
         presentation: { type: "key_value" }
       });
+    case "inbox list":
+      return inboxListCommand(execution, runtime, meta);
+    case "inbox get":
+      return inboxGetCommand(execution, runtime, meta);
     case "update":
       return commandResult("update", await updateData(), { meta, presentation: { type: "key_value" } });
     case "describe":
@@ -108,6 +112,60 @@ export async function executeCommand(
       }
       throw new CliError(`No handler for ${execution.commandName}`, { code: "handler_missing", exitCodeName: "internal" });
   }
+}
+
+async function inboxListCommand(
+  execution: CommandExecution,
+  runtime: RuntimeOptions,
+  meta: CommandMeta
+): Promise<CommandResult> {
+  const page = integerFlag(execution.flags, "page");
+  const per = integerFlag(execution.flags, "per") ?? integerFlag(execution.flags, "limit");
+  const query = flagString(execution.flags, "query") || flagString(execution.flags, "search");
+  const status = flagString(execution.flags, "status");
+  const inboxId = integerFlag(execution.flags, "inbox-id");
+
+  const result = await callMcpResult(runtime, "nitro_inbox", {
+    command: "list_mailbox",
+    ...(query ? { query } : {}),
+    ...(status ? { status } : {}),
+    ...(inboxId !== undefined ? { inbox_id: inboxId } : {}),
+    ...(page !== undefined ? { page } : {}),
+    ...(per !== undefined ? { per } : {})
+  });
+
+  const rows = Array.isArray(result.items) ? result.items as Array<Record<string, unknown>> : [];
+  return commandResult("inbox list", {
+    title: "Inbox",
+    rows,
+    pagination: result.pagination,
+    counts: result.counts
+  }, {
+    meta,
+    presentation: {
+      type: "table",
+      columns: tableColumnsFor("inbox", rows)
+    }
+  });
+}
+
+async function inboxGetCommand(
+  execution: CommandExecution,
+  runtime: RuntimeOptions,
+  meta: CommandMeta
+): Promise<CommandResult> {
+  const conversationId = integerArgument(execution.rest[0], "conversation-id");
+  const messageLimit = integerFlag(execution.flags, "message-limit");
+  const result = await callMcpResult(runtime, "nitro_inbox", {
+    command: "get_thread",
+    conversation_id: conversationId,
+    ...(messageLimit !== undefined ? { message_limit: messageLimit } : {})
+  });
+
+  return commandResult("inbox get", result, {
+    meta,
+    presentation: { type: "key_value" }
+  });
 }
 
 async function contactsImportCommand(
@@ -768,6 +826,25 @@ function integerFlag(flags: Record<string, string | boolean>, name: string): num
   return parsed;
 }
 
+function integerArgument(value: string | undefined, name: string): number {
+  if (!value) {
+    throw new CliError(`Missing ${name}.`, {
+      code: "missing_argument",
+      exitCodeName: "usage",
+      nextAction: `Pass <${name}>.`
+    });
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    throw new CliError(`<${name}> must be a positive integer`, {
+      code: "invalid_integer_argument",
+      exitCodeName: "data"
+    });
+  }
+  return parsed;
+}
+
 function optionalBooleanFlag(flags: Record<string, string | boolean>, name: string): boolean | undefined {
   const value = flagString(flags, name);
   if (value === undefined) return undefined;
@@ -786,7 +863,8 @@ function tableColumnsFor(entity: string, rows: Array<Record<string, unknown>>) {
     contacts: ["id", "email", "first_name", "last_name", "subscribed_email"],
     lists: ["id", "name", "contact_count", "created_at"],
     templates: ["id", "name", "subject", "created_at"],
-    suppressions: ["id", "email", "reason", "source_provider", "provider_diagnostic", "created_at"]
+    suppressions: ["id", "email", "reason", "source_provider", "provider_diagnostic", "created_at"],
+    inbox: ["conversation_id", "subject", "external_participant_address", "status", "last_message_at"]
   };
   const keys = preferred[entity] || Object.keys(rows[0] || {}).slice(0, 6);
   return keys.map((key) => ({ key, label: humanLabel(key) }));
