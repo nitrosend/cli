@@ -1,6 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const LABELS = {
   all: [""],
@@ -33,7 +34,7 @@ const LABELS = {
   upgrades: ["version/gate.test.js"]
 };
 
-const allFiles = await listTests(new URL("../dist", import.meta.url).pathname);
+const allFiles = await listTests(fileURLToPath(new URL("../dist", import.meta.url)));
 const files = selectTests(allFiles, process.argv.slice(2));
 const result = spawnSync(process.execPath, ["--test", ...files], { stdio: "inherit" });
 process.exit(result.status ?? 1);
