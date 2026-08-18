@@ -291,7 +291,7 @@ test("dashboard uses live MCP status when credentials exist", async () => {
         type: "text",
         text: JSON.stringify({
           result: {
-            account: { tier: "free", can_send: true, using_sandbox: true },
+            account: { tier: "free", can_send: true },
             onboarding: { first_send: { completed: false } },
             provider: { name: "mailgun", configured: false },
             billing: { tier: "free" }

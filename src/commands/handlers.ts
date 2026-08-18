@@ -456,7 +456,6 @@ function dashboardFromStatus(
   const blockers: string[] = [];
 
   if (firstSendComplete === false) blockers.push("Onboarding setup is not completed");
-  if (account.using_sandbox === true) blockers.push("Sandbox sender is active");
   if (provider.configured === false) blockers.push("Email provider is not fully configured");
 
   return {
@@ -466,7 +465,7 @@ function dashboardFromStatus(
       project_config: projectContext.path || null,
       status_source: options.source,
       auth: authState,
-      account: pick(account, ["tier", "can_send", "contact_count", "flow_count", "campaign_count", "using_sandbox"]),
+      account: pick(account, ["tier", "can_send", "contact_count", "flow_count", "campaign_count"]),
       onboarding: {
         brand_kit_setup: completed(onboarding.brand_kit_setup),
         domain_verified: completed(onboarding.domain_verified),
