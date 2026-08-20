@@ -291,10 +291,33 @@ test("dashboard uses live MCP status when credentials exist", async () => {
         type: "text",
         text: JSON.stringify({
           result: {
-            account: { tier: "free", can_send: true },
+            account: { id: 10, name: "Acme", tier: "free" },
+            brand: {
+              sid: "brand_acme",
+              can_send: false,
+              domain_verified: false
+            },
             onboarding: { first_send: { completed: false } },
             provider: { name: "mailgun", configured: false },
-            billing: { tier: "free" }
+            billing: { tier: "free" },
+            brand_subdomain: {
+              status: "not_prepared",
+              ready: false,
+              preparation_required: true,
+              fqdn: "acme.nitrosend.com"
+            },
+            delivery: {
+              assessment_scope: "sender_capacity",
+              admission_status: "denied",
+              commercial_capacity: { status: "known", limit: 100, remaining: 100 },
+              blocking_control: "sender_identity",
+              reason_code: "sender_not_ready"
+            },
+            issues: [{
+              area: "domain",
+              severity: "high",
+              message: "No ready sending identity. Prepare your reserved Nitrosend brand subdomain."
+            }]
           }
         })
       }]
@@ -308,7 +331,22 @@ test("dashboard uses live MCP status when credentials exist", async () => {
     const parsed = JSON.parse(io.stdoutText);
     assert.equal(parsed.data.status_source, "live");
     assert.equal(parsed.data.onboarding.first_send, false);
-    assert.ok(parsed.sidecars.blockers.includes("Onboarding setup is not completed"));
+    assert.deepEqual(parsed.sidecars.blockers, [
+      "No ready sending identity. Prepare your reserved Nitrosend brand subdomain."
+    ]);
+    assert.deepEqual(parsed.data.brand_subdomain, {
+      status: "not_prepared",
+      ready: false,
+      preparation_required: true,
+      fqdn: "acme.nitrosend.com"
+    });
+    assert.deepEqual(parsed.data.delivery, {
+      assessment_scope: "sender_capacity",
+      admission_status: "denied",
+      commercial_capacity: { status: "known", limit: 100, remaining: 100 },
+      blocking_control: "sender_identity",
+      reason_code: "sender_not_ready"
+    });
   } finally {
     globalThis.fetch = previousFetch;
     if (previousConfig === undefined) delete process.env.NITROSEND_CONFIG_DIR;

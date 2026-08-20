@@ -449,14 +449,21 @@ function dashboardFromStatus(
   options: { source: "live" | "cache" | "stale"; meta?: CommandMeta; warning?: string }
 ): DashboardPayload {
   const account = recordValue(status.account);
+  const brand = recordValue(status.brand);
   const onboarding = recordValue(status.onboarding);
   const provider = recordValue(status.provider);
   const billing = recordValue(status.billing);
+  const delivery = recordValue(status.delivery);
+  const brandSubdomain = recordValue(status.brand_subdomain);
   const firstSendComplete = completed(onboarding.first_send);
-  const blockers: string[] = [];
-
-  if (firstSendComplete === false) blockers.push("Onboarding setup is not completed");
-  if (provider.configured === false) blockers.push("Email provider is not fully configured");
+  const issues = Array.isArray(status.issues)
+    ? status.issues.filter((issue): issue is Record<string, unknown> => issue !== null && typeof issue === "object")
+    : [];
+  // The API owns blocker and remediation semantics. Present its high-severity
+  // findings verbatim instead of rebuilding send gates from partial fields.
+  const blockers = issues
+    .filter((issue) => issue.severity === "high")
+    .map((issue) => String(issue.message || "Sending needs attention"));
 
   return {
     data: {
@@ -465,7 +472,8 @@ function dashboardFromStatus(
       project_config: projectContext.path || null,
       status_source: options.source,
       auth: authState,
-      account: pick(account, ["tier", "can_send", "contact_count", "flow_count", "campaign_count"]),
+      account: pick(account, ["id", "name", "tier"]),
+      brand: pick(brand, ["sid", "name", "company_name", "can_send", "domain_verified", "contact_count", "flow_count", "campaign_count"]),
       onboarding: {
         brand_kit_setup: completed(onboarding.brand_kit_setup),
         domain_verified: completed(onboarding.domain_verified),
@@ -473,7 +481,35 @@ function dashboardFromStatus(
         first_send: firstSendComplete
       },
       provider: pick(provider, ["name", "configured", "domain_verified"]),
-      billing: pick(billing, ["plan", "tier", "wallet_balance_cents", "resources"])
+      brand_subdomain: pick(brandSubdomain, [
+        "status",
+        "ready",
+        "selected",
+        "preparation_required",
+        "from_email",
+        "fqdn",
+        "apex",
+        "local_part",
+        "local_part_editable",
+        "fqdn_changeable",
+        "next_retry_at",
+        "failure_code"
+      ]),
+      billing: pick(billing, ["plan", "tier", "subscription_status", "resources"]),
+      delivery: pick(delivery, [
+        "assessment_scope",
+        "admission_status",
+        "commercial_capacity",
+        "identity_capacity",
+        "brand_subdomain_capacity",
+        "pacing_state",
+        "blocking_control",
+        "reason_code",
+        "issues",
+        "retry_at",
+        "observed_at"
+      ]),
+      issues
     },
     meta: options.meta,
     sidecars: {
