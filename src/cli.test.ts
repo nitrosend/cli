@@ -301,10 +301,10 @@ test("dashboard uses live MCP status when credentials exist", async () => {
             provider: { name: "mailgun", configured: false },
             billing: { tier: "free" },
             brand_subdomain: {
-              status: "not_prepared",
+              status: "not_materialized",
               ready: false,
               preparation_required: true,
-              fqdn: "acme.nitrosend.com"
+              fqdn: "acme.nitrosend.net"
             },
             delivery: {
               assessment_scope: "sender_capacity",
@@ -335,10 +335,10 @@ test("dashboard uses live MCP status when credentials exist", async () => {
       "No ready sending identity. Prepare your reserved Nitrosend brand subdomain."
     ]);
     assert.deepEqual(parsed.data.brand_subdomain, {
-      status: "not_prepared",
+      status: "not_materialized",
       ready: false,
       preparation_required: true,
-      fqdn: "acme.nitrosend.com"
+      fqdn: "acme.nitrosend.net"
     });
     assert.deepEqual(parsed.data.delivery, {
       assessment_scope: "sender_capacity",
