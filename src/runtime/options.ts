@@ -38,7 +38,12 @@ const GLOBAL_FLAGS = new Set([
   "source-provider",
   "active",
   "inbox-id",
-  "message-limit"
+  "state",
+  "subject",
+  "body",
+  "html",
+  "test-to",
+  "idempotency-key"
 ]);
 
 export function runtimeOptions(flags: Record<string, string | boolean>): RuntimeOptions {
@@ -61,6 +66,7 @@ export function runtimeOptions(flags: Record<string, string | boolean>): Runtime
     yes: flagBoolean(flags, "yes"),
     explain: flagBoolean(flags, "explain"),
     confirm: flagString(flags, "confirm"),
+    idempotencyKey: flagString(flags, "idempotency-key"),
     profile: flagString(flags, "profile"),
     apiUrl: flagString(flags, "api-url")
   };

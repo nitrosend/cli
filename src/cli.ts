@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { flagBoolean, parseArgs } from "./args.js";
 import { executeCommand, explainResult } from "./commands/handlers.js";
 import { EXIT_CODES } from "./contracts/exit-codes.js";
@@ -52,8 +53,8 @@ export async function runCli(options: RunOptions): Promise<number> {
       projectContext = await loadProjectContext(options.cwd);
       const execution = { ...resolveExecution(parsed.positionals), flags: parsed.flags };
       parsedCommand = execution.commandName;
-      if (activeRuntime.machine && execution.descriptor.idempotency.mode !== "none") {
-        activeRuntime = { ...activeRuntime, idempotencyKey: `cli-${Date.now().toString(36)}` };
+      if (execution.descriptor.idempotency.mode === "auto" && !activeRuntime.idempotencyKey) {
+        activeRuntime = { ...activeRuntime, idempotencyKey: `cli-${randomUUID()}` };
         runtime = activeRuntime;
       }
 

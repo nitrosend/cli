@@ -700,7 +700,7 @@ test("inbox get maps to nitro_inbox get_thread command", async () => {
   try {
     const io = streams();
     const code = await runCli({
-      argv: ["inbox", "get", "122", "--message-limit", "5", "--json"],
+      argv: ["inbox", "get", "122", "--json"],
       stdout: io.stdout,
       stderr: io.stderr
     });
@@ -712,8 +712,7 @@ test("inbox get maps to nitro_inbox get_thread command", async () => {
     assert.equal(body.params.name, "nitro_inbox");
     assert.deepEqual(body.params.arguments, {
       command: "get_thread",
-      conversation_id: 122,
-      message_limit: 5
+      conversation_id: 122
     });
   } finally {
     globalThis.fetch = previousFetch;

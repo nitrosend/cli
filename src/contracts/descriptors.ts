@@ -294,7 +294,7 @@ function inboxDescriptors(): CommandDescriptor[] {
     {
       name: "inbox list",
       group: "inbox",
-      summary: "List agent inbox mailbox conversations.",
+      summary: "List and search mailbox conversations.",
       usage: "nitrosend inbox list [--query <text>] [--inbox-id <id>] [--status <status>] [--page <n>] [--per <n>]",
       input_schema: objectSchema,
       output_schema: objectSchema,
@@ -305,16 +305,73 @@ function inboxDescriptors(): CommandDescriptor[] {
       agent: { suitable: true }
     },
     {
-      name: "inbox get",
+      name: "inbox queue",
       group: "inbox",
-      summary: "Read one sanitized agent inbox thread.",
-      usage: "nitrosend inbox get <conversation-id> [--message-limit <n>]",
+      summary: "List prioritized inbox action items.",
+      usage: "nitrosend inbox queue [--state <state>] [--page <n>] [--per <n>]",
       input_schema: objectSchema,
       output_schema: objectSchema,
-      examples: [{ description: "Read a thread", command: "nitrosend inbox get 123 --message-limit 10" }],
+      examples: [{ description: "List items needing attention", command: "nitrosend inbox queue --state needs_attention --per 10" }],
       safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
       cache: { mode: "none" },
       idempotency: { mode: "none" },
+      agent: { suitable: true }
+    },
+    {
+      name: "inbox get",
+      group: "inbox",
+      summary: "Read one sanitized agent inbox thread.",
+      usage: "nitrosend inbox get <conversation-id>",
+      input_schema: objectSchema,
+      output_schema: objectSchema,
+      examples: [{ description: "Read a thread", command: "nitrosend inbox get 123" }],
+      safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
+      cache: { mode: "none" },
+      idempotency: { mode: "none" },
+      agent: { suitable: true }
+    },
+    {
+      name: "inbox item",
+      group: "inbox",
+      summary: "Read one prioritized inbox action item and its bounded thread context.",
+      usage: "nitrosend inbox item <action-item-id>",
+      input_schema: objectSchema,
+      output_schema: objectSchema,
+      examples: [{ description: "Read a queue item", command: "nitrosend inbox item 456" }],
+      safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
+      cache: { mode: "none" },
+      idempotency: { mode: "none" },
+      agent: { suitable: true }
+    },
+    {
+      name: "inbox reply",
+      group: "inbox",
+      summary: "Reply to a conversation, or send the reply draft to a test recipient.",
+      usage: "nitrosend inbox reply <conversation-id> (--body <text>|--html <html>) [--subject <text>] [--test-to <email>] [--idempotency-key <key>] [--dry-run] --confirm <conversation-id>",
+      input_schema: objectSchema,
+      output_schema: objectSchema,
+      examples: [{ description: "Validate a reply without sending", command: "nitrosend inbox reply 123 --body 'Thanks, we will follow up.' --dry-run" }],
+      safety: {
+        class: "external-effect",
+        supports_dry_run: true,
+        requires_confirmation: true,
+        confirmation_target: "<conversation-id>"
+      },
+      cache: { mode: "none" },
+      idempotency: { mode: "auto" },
+      agent: { suitable: true, reason: "Use --dry-run first; a real or test send requires typed conversation confirmation." }
+    },
+    {
+      name: "inbox action",
+      group: "inbox",
+      summary: "Apply a handled, human, agent, or quarantine disposition to a queue item.",
+      usage: "nitrosend inbox action <action-item-id> <mark-handled|request-human|release-to-agent|mark-quarantine> [--idempotency-key <key>]",
+      input_schema: objectSchema,
+      output_schema: objectSchema,
+      examples: [{ description: "Mark a queue item handled", command: "nitrosend inbox action 456 mark-handled" }],
+      safety: { class: "mutating", supports_dry_run: false, requires_confirmation: false },
+      cache: { mode: "none" },
+      idempotency: { mode: "auto" },
       agent: { suitable: true }
     }
   ];

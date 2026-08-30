@@ -38,6 +38,33 @@ nitrosend lists list
 nitrosend templates list
 ```
 
+### Agent Inbox
+
+Agent Inbox commands are thin adapters over the existing `nitro_inbox` and
+`nitro_inbox_action` tools. They require Agent Inbox access for the active
+account and brand.
+
+```bash
+nitrosend inbox list --query billing       # search mailbox conversations
+nitrosend inbox queue                      # prioritized items needing attention
+nitrosend inbox get 123                    # bounded, sanitized thread context
+nitrosend inbox item 456                   # one queue item and its thread context
+
+nitrosend inbox reply 123 --body 'Thanks, we are on it.' --dry-run
+nitrosend inbox reply 123 --body 'Thanks, we are on it.' --confirm 123
+nitrosend inbox reply 123 --body 'Draft reply' --test-to me@example.com --confirm 123
+
+nitrosend inbox action 456 mark-handled
+nitrosend inbox action 456 request-human
+nitrosend inbox action 456 release-to-agent
+nitrosend inbox action 456 mark-quarantine
+```
+
+Reply and action commands receive an automatic idempotency key. Pass
+`--idempotency-key <key>` when a caller needs to retry the same operation with a
+stable key. Real replies and test sends require typed conversation confirmation;
+`--dry-run` validates a reply without sending.
+
 ### Send and automate
 
 The CLI exposes the full Nitrosend MCP surface — every tool an AI agent can call, you can call too:
@@ -118,6 +145,7 @@ Useful flags:
 | `--machine` | Implies `--json --non-interactive --no-color --no-pager` |
 | `--explain` | Print the resolved plan; don't execute |
 | `--dry-run` | Preview changes without persisting (where supported) |
+| `--idempotency-key <key>` | Supply a stable retry key for idempotent mutations |
 | `--yes` | Skip non-destructive confirmations (typed confirmation still required for destructive ops) |
 | `--non-interactive` | Fail closed when input would be required |
 | `--trace` | Write a structured trace to stderr |

@@ -9,13 +9,14 @@ export interface HistoryEntry {
 }
 
 const HISTORY_LIMIT = 50;
+const PRIVATE_VALUE_FLAGS = new Set(["--api-key", "--args", "--json-args", "--body", "--html"]);
 
 export async function recordHistory(argv: string[]): Promise<void> {
   if (argv.length === 0 || ["recent", "redo", "login"].includes(argv[0])) return;
   const entries = await readHistory();
   entries.unshift({
     timestamp: new Date().toISOString(),
-    command: redact(`nitrosend ${argv.join(" ")}`)
+    command: redact(`nitrosend ${privateValuesRedacted(argv).join(" ")}`)
   });
   await writeHistory(entries.slice(0, HISTORY_LIMIT));
 }
@@ -35,4 +36,23 @@ async function writeHistory(entries: HistoryEntry[]): Promise<void> {
 
 function historyPath(): string {
   return join(configDir(), "history.json");
+}
+
+function privateValuesRedacted(argv: string[]): string[] {
+  const result: string[] = [];
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index];
+    const inlineFlag = [...PRIVATE_VALUE_FLAGS].find((flag) => arg.startsWith(`${flag}=`));
+    if (inlineFlag) {
+      result.push(`${inlineFlag}=[redacted]`);
+      continue;
+    }
+
+    result.push(arg);
+    if (PRIVATE_VALUE_FLAGS.has(arg) && index + 1 < argv.length) {
+      result.push("[redacted]");
+      index++;
+    }
+  }
+  return result;
 }

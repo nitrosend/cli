@@ -61,9 +61,10 @@ parsing runs:
 ## Safety
 
 Mutating commands declare a safety class and whether they support `--dry-run`.
-Destructive commands use typed confirmation, not `y/N`. `--yes` never bypasses a
-typed confirmation. `--non-interactive` and `--machine` fail closed whenever a
-prompt would be required.
+Commands with an irreversible external effect may require typed confirmation;
+destructive commands always do. `--yes` never bypasses typed confirmation.
+`--non-interactive` and `--machine` fail closed whenever a prompt would be
+required.
 
 `local-state` commands mutate only the user's local Nitrosend CLI files, such as
 profile creation/removal. They do not call Nitrosend server-side mutation APIs,
@@ -72,8 +73,9 @@ but agents should still treat any credential material as sensitive.
 ## Agent Mode
 
 `--machine` implies `--json --non-interactive --no-color --no-pager`. Commands
-with side effects receive an automatic idempotency key when applicable; read
-commands do not receive one just because `--machine` is set.
+whose descriptor declares automatic idempotency receive a generated key in all
+output modes. Callers may pass `--idempotency-key <key>` to make retries stable.
+Read commands never receive an idempotency key.
 `--explain` returns the resolved plan as data without performing side effects.
 For `mcp tools call <name>`, explain first uses cached `tools/list`
 annotations to report wrapped-tool safety and falls back to conservative
@@ -97,10 +99,31 @@ nitrosend campaigns list --search welcome
 nitrosend contacts list --query alice@example.com
 nitrosend lists list
 nitrosend templates list
+nitrosend inbox list --query billing
+nitrosend inbox queue --state needs_attention
+nitrosend inbox get 123
+nitrosend inbox item 456
 ```
 
 These commands call existing MCP tools internally and keep the same
 `CommandResult` envelope as raw MCP commands.
+
+## First-Class Inbox Actions
+
+Inbox mutations remain adapters over the single `nitro_inbox_action` tool:
+
+```bash
+nitrosend inbox reply 123 --body 'Draft reply' --dry-run
+nitrosend inbox reply 123 --body 'Send this' --confirm 123
+nitrosend inbox reply 123 --body 'Test this' --test-to me@example.com --confirm 123
+nitrosend inbox action 456 mark-handled
+```
+
+The reply adapter first reads the current bounded thread context and forwards
+its server-issued reply-context digest. It does not recreate reply policy in the
+CLI. Real and test sends require typed confirmation. Disposition actions are
+idempotent state mutations and accept the same generated or caller-supplied
+idempotency key contract.
 
 ## Release Guidance
 

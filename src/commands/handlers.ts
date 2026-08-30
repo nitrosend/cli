@@ -24,6 +24,12 @@ import { CURRENT_VERSION } from "../version/current.js";
 import { compareSemver } from "../version/semver.js";
 
 const TOOLS_CACHE_TTL_SECONDS = 900;
+const INBOX_FEEDBACK_ACTIONS = new Set([
+  "mark_handled",
+  "request_human",
+  "release_to_agent",
+  "mark_quarantine"
+]);
 const ENTITY_COMMANDS: Record<string, { entity: string; title: string; searchFilter?: string; statusFilter?: boolean }> = {
   "flows list": { entity: "flows", title: "Flows", searchFilter: "search", statusFilter: true },
   "campaigns list": { entity: "campaigns", title: "Campaigns", searchFilter: "search", statusFilter: true },
@@ -73,8 +79,16 @@ export async function executeCommand(
       });
     case "inbox list":
       return inboxListCommand(execution, runtime, meta);
+    case "inbox queue":
+      return inboxQueueCommand(execution, runtime, meta);
     case "inbox get":
       return inboxGetCommand(execution, runtime, meta);
+    case "inbox item":
+      return inboxItemCommand(execution, runtime, meta);
+    case "inbox reply":
+      return inboxReplyCommand(execution, runtime, meta);
+    case "inbox action":
+      return inboxActionCommand(execution, runtime, meta);
     case "update":
       return commandResult("update", await updateData(), { meta, presentation: { type: "key_value" } });
     case "describe":
@@ -112,6 +126,36 @@ export async function executeCommand(
       }
       throw new CliError(`No handler for ${execution.commandName}`, { code: "handler_missing", exitCodeName: "internal" });
   }
+}
+
+async function inboxQueueCommand(
+  execution: CommandExecution,
+  runtime: RuntimeOptions,
+  meta: CommandMeta
+): Promise<CommandResult> {
+  const page = integerFlag(execution.flags, "page");
+  const per = integerFlag(execution.flags, "per") ?? integerFlag(execution.flags, "limit");
+  const state = flagString(execution.flags, "state");
+  const result = await callMcpResult(runtime, "nitro_inbox", {
+    command: "list_queue",
+    ...(state ? { state } : {}),
+    ...(page !== undefined ? { page } : {}),
+    ...(per !== undefined ? { per } : {})
+  });
+
+  const rows = Array.isArray(result.items) ? result.items as Array<Record<string, unknown>> : [];
+  return commandResult("inbox queue", {
+    title: "Inbox queue",
+    rows,
+    pagination: result.pagination,
+    counts: result.counts
+  }, {
+    meta,
+    presentation: {
+      type: "table",
+      columns: tableColumnsFor("inbox_queue", rows)
+    }
+  });
 }
 
 async function inboxListCommand(
@@ -155,14 +199,103 @@ async function inboxGetCommand(
   meta: CommandMeta
 ): Promise<CommandResult> {
   const conversationId = integerArgument(execution.rest[0], "conversation-id");
-  const messageLimit = integerFlag(execution.flags, "message-limit");
   const result = await callMcpResult(runtime, "nitro_inbox", {
     command: "get_thread",
-    conversation_id: conversationId,
-    ...(messageLimit !== undefined ? { message_limit: messageLimit } : {})
+    conversation_id: conversationId
   });
 
   return commandResult("inbox get", result, {
+    meta,
+    presentation: { type: "key_value" }
+  });
+}
+
+async function inboxItemCommand(
+  execution: CommandExecution,
+  runtime: RuntimeOptions,
+  meta: CommandMeta
+): Promise<CommandResult> {
+  const actionItemId = integerArgument(execution.rest[0], "action-item-id");
+  const result = await callMcpResult(runtime, "nitro_inbox", {
+    command: "get_item",
+    action_item_id: actionItemId
+  });
+
+  return commandResult("inbox item", result, {
+    meta,
+    presentation: { type: "key_value" }
+  });
+}
+
+async function inboxReplyCommand(
+  execution: CommandExecution,
+  runtime: RuntimeOptions,
+  meta: CommandMeta
+): Promise<CommandResult> {
+  const conversationId = integerArgument(execution.rest[0], "conversation-id");
+  const body = flagString(execution.flags, "body");
+  const html = flagString(execution.flags, "html");
+  if (!body && !html) {
+    throw new CliError("Reply requires --body or --html.", {
+      code: "missing_reply_body",
+      exitCodeName: "usage",
+      nextAction: "Pass `--body <text>` or `--html <html>`."
+    });
+  }
+
+  const thread = await callMcpResult(runtime, "nitro_inbox", {
+    command: "get_thread",
+    conversation_id: conversationId
+  });
+  const replyContextDigest = stringField(recordValue(thread.reply_context), "context_digest");
+  if (!replyContextDigest) {
+    throw new CliError("nitro_inbox did not return a reply context digest", {
+      code: "invalid_tool_result",
+      exitCodeName: "data"
+    });
+  }
+
+  const subject = flagString(execution.flags, "subject");
+  const testTo = flagString(execution.flags, "test-to");
+  const result = await callMcpResult(runtime, "nitro_inbox_action", {
+    command: testTo ? "send_reply_test" : "send_reply",
+    conversation_id: conversationId,
+    ...(subject ? { subject } : {}),
+    ...(body ? { body } : {}),
+    ...(html ? { html } : {}),
+    ...(testTo ? { to: [testTo] } : {}),
+    reply_context_digest: replyContextDigest,
+    idempotency_key: commandIdempotencyKey(runtime),
+    dry_run: runtime.dryRun
+  });
+
+  return commandResult("inbox reply", result, {
+    meta,
+    presentation: { type: "key_value" }
+  });
+}
+
+async function inboxActionCommand(
+  execution: CommandExecution,
+  runtime: RuntimeOptions,
+  meta: CommandMeta
+): Promise<CommandResult> {
+  const actionItemId = integerArgument(execution.rest[0], "action-item-id");
+  const action = execution.rest[1]?.replace(/-/g, "_");
+  if (!action || !INBOX_FEEDBACK_ACTIONS.has(action)) {
+    throw new CliError("Action must be one of: mark-handled, request-human, release-to-agent, mark-quarantine.", {
+      code: "invalid_inbox_action",
+      exitCodeName: "usage"
+    });
+  }
+
+  const result = await callMcpResult(runtime, "nitro_inbox_action", {
+    command: action,
+    action_item_id: actionItemId,
+    idempotency_key: commandIdempotencyKey(runtime)
+  });
+
+  return commandResult("inbox action", result, {
     meta,
     presentation: { type: "key_value" }
   });
@@ -837,6 +970,19 @@ function recordValue(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
+function stringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function commandIdempotencyKey(runtime: RuntimeOptions): string {
+  if (runtime.idempotencyKey) return runtime.idempotencyKey;
+  throw new CliError("Command idempotency key was not initialized", {
+    code: "idempotency_key_missing",
+    exitCodeName: "internal"
+  });
+}
+
 function completed(value: unknown): boolean | null {
   if (typeof value === "boolean") return value;
   const record = recordValue(value);
@@ -899,7 +1045,8 @@ function tableColumnsFor(entity: string, rows: Array<Record<string, unknown>>) {
     lists: ["id", "name", "contact_count", "created_at"],
     templates: ["id", "name", "subject", "created_at"],
     suppressions: ["id", "email", "reason", "source_provider", "provider_diagnostic", "created_at"],
-    inbox: ["conversation_id", "subject", "external_participant_address", "status", "last_message_at"]
+    inbox: ["conversation_id", "subject", "external_participant_address", "status", "last_message_at"],
+    inbox_queue: ["action_item_id", "state", "priority", "reason_codes", "preview", "last_inbound_at"]
   };
   const keys = preferred[entity] || Object.keys(rows[0] || {}).slice(0, 6);
   return keys.map((key) => ({ key, label: humanLabel(key) }));
