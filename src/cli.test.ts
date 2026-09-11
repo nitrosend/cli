@@ -765,7 +765,7 @@ test("contacts import command direct uploads and renders guardrail", async () =>
       return new Response(JSON.stringify({
         id: 42,
         status: "pending",
-        guardrail: { tier: "hold_sends", status: "requires_review", sends_held: true }
+        guardrail: { tier: "auto", status: "ok", standing: "trusted", max_rows: null }
       }), { status: 201, headers: { "Content-Type": "application/json" } });
     }
     throw new Error(`unexpected URL ${requestUrl}`);
@@ -782,8 +782,10 @@ test("contacts import command direct uploads and renders guardrail", async () =>
     assert.equal(code, 0);
     const parsed = JSON.parse(io.stdoutText);
     assert.equal(parsed.command, "contacts import");
-    assert.equal(parsed.data.guardrail_tier, "hold_sends");
-    assert.equal(parsed.data.guardrail_status, "requires_review");
+    assert.equal(parsed.data.guardrail_tier, "auto");
+    assert.equal(parsed.data.guardrail_status, "ok");
+    assert.equal(parsed.data.standing, "trusted");
+    assert.equal(parsed.data.max_rows, null);
     assert.deepEqual(calls, [
       "POST https://api.example.test/v1/direct_uploads",
       "PUT https://s3.example.test/upload",

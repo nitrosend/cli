@@ -350,7 +350,8 @@ async function contactsImportCommand(
     failed_rows: result.failed_rows,
     guardrail_tier: result.guardrail?.tier,
     guardrail_status: result.guardrail?.status,
-    sends_held: result.guardrail?.sends_held
+    standing: result.guardrail?.standing,
+    max_rows: result.guardrail?.max_rows
   };
 }
 

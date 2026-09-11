@@ -47,7 +47,7 @@ test("uploadContactsImport performs Active Storage direct upload then creates im
       return new Response(JSON.stringify({
         id: 42,
         status: "pending",
-        guardrail: { tier: "hold_sends", status: "requires_review", sends_held: true }
+        guardrail: { tier: "auto", status: "ok", standing: "trusted", max_rows: null }
       }), { status: 201, headers: { "Content-Type": "application/json" } });
     }
 
@@ -64,7 +64,8 @@ test("uploadContactsImport performs Active Storage direct upload then creates im
     });
 
     assert.equal(result.id, 42);
-    assert.equal(result.guardrail?.tier, "hold_sends");
+    assert.equal(result.guardrail?.tier, "auto");
+    assert.equal(result.guardrail?.standing, "trusted");
     assert.deepEqual(calls.map((call) => [call.method, call.url]), [
       ["POST", "https://api.example.test/v1/direct_uploads"],
       ["PUT", "https://s3.example.test/upload"],

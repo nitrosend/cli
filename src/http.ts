@@ -94,10 +94,10 @@ export interface DirectImportOptions {
 }
 
 export interface ImportGuardrail {
-  tier?: string;
-  status?: string;
-  contact_us_ceiling?: number;
-  sends_held?: boolean;
+  tier?: "auto" | "contact_us";
+  status?: "ok" | "contact_sales";
+  standing?: string;
+  max_rows?: number | null;
 }
 
 export interface ImportResult {
