@@ -295,7 +295,7 @@ function inboxDescriptors(): CommandDescriptor[] {
       name: "inbox list",
       group: "inbox",
       summary: "List and search mailbox conversations.",
-      usage: "nitrosend inbox list [--query <text>] [--inbox-id <id>] [--status <status>] [--page <n>] [--per <n>]",
+      usage: "nitrosend inbox list [--query <text>] [--inbox-id <id>] [--status <status>] [--view compact|full] [--page <n>] [--per <n>]",
       input_schema: objectSchema,
       output_schema: objectSchema,
       examples: [{ description: "Search inbox conversations", command: "nitrosend inbox list --query sourcey --per 10" }],
@@ -307,11 +307,14 @@ function inboxDescriptors(): CommandDescriptor[] {
     {
       name: "inbox queue",
       group: "inbox",
-      summary: "List prioritized inbox action items.",
-      usage: "nitrosend inbox queue [--state <state>] [--page <n>] [--per <n>]",
+      summary: "List prioritized inbox action items as compact rows.",
+      usage: "nitrosend inbox queue [--state <state>] [--inbox-id <id>] [--query <text>] [--sender <text>] [--reason-code <code>] [--since <iso8601>] [--sort queue|newest] [--view compact|full] [--page <n>] [--per <n>]",
       input_schema: objectSchema,
       output_schema: objectSchema,
-      examples: [{ description: "List items needing attention", command: "nitrosend inbox queue --state needs_attention --per 10" }],
+      examples: [
+        { description: "List items needing attention", command: "nitrosend inbox queue --state needs_attention --per 10" },
+        { description: "Find quarantined spam", command: "nitrosend inbox queue --state quarantine --reason-code spam_fail --per 100" }
+      ],
       safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
       cache: { mode: "none" },
       idempotency: { mode: "none" },
@@ -373,6 +376,22 @@ function inboxDescriptors(): CommandDescriptor[] {
       cache: { mode: "none" },
       idempotency: { mode: "auto" },
       agent: { suitable: true }
+    },
+    {
+      name: "inbox triage",
+      group: "inbox",
+      summary: "Apply one disposition to many queue items, by id list or by the same filters as inbox queue.",
+      usage: "nitrosend inbox triage <mark-handled|request-human|release-to-agent|mark-quarantine|classify-spam|classify-not-spam> (--ids <id,id,...> | [--state <state>] [--inbox-id <id>] [--query <text>] [--sender <text>] [--reason-code <code>] [--since <iso8601>] --expected-count <n>) [--idempotency-key <key>]",
+      input_schema: objectSchema,
+      output_schema: objectSchema,
+      examples: [
+        { description: "Handle three items", command: "nitrosend inbox triage mark-handled --ids 12,15,19" },
+        { description: "Confirm all quarantined spam", command: "nitrosend inbox triage classify-spam --state quarantine --reason-code spam_fail --expected-count 17" }
+      ],
+      safety: { class: "mutating", supports_dry_run: false, requires_confirmation: false },
+      cache: { mode: "none" },
+      idempotency: { mode: "auto" },
+      agent: { suitable: true, reason: "Read inbox queue first and pass its total as --expected-count when selecting by filter." }
     }
   ];
 }

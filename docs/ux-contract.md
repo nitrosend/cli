@@ -101,9 +101,15 @@ nitrosend lists list
 nitrosend templates list
 nitrosend inbox list --query billing
 nitrosend inbox queue --state needs_attention
+nitrosend inbox queue --state quarantine --reason-code spam_fail --per 100
 nitrosend inbox get 123
 nitrosend inbox item 456
 ```
+
+List rows are compact by default (id, state, reason codes, sender, subject,
+timing); `--view full` restores previews and contact context. `inbox queue`
+accepts the same filters the server does: `--state`, `--inbox-id`, `--query`,
+`--sender`, `--reason-code`, `--since`, `--sort queue|newest`.
 
 These commands call existing MCP tools internally and keep the same
 `CommandResult` envelope as raw MCP commands.
@@ -117,6 +123,8 @@ nitrosend inbox reply 123 --body 'Draft reply' --dry-run
 nitrosend inbox reply 123 --body 'Send this' --confirm 123
 nitrosend inbox reply 123 --body 'Test this' --test-to me@example.com --confirm 123
 nitrosend inbox action 456 mark-handled
+nitrosend inbox triage mark-handled --ids 12,15,19
+nitrosend inbox triage classify-spam --state quarantine --reason-code spam_fail --expected-count 17
 ```
 
 The reply adapter first reads the current bounded thread context and forwards
@@ -124,6 +132,13 @@ its server-issued reply-context digest. It does not recreate reply policy in the
 CLI. Real and test sends require typed confirmation. Disposition actions are
 idempotent state mutations and accept the same generated or caller-supplied
 idempotency key contract.
+
+`inbox triage` applies one disposition to many items through the same tool.
+Select with `--ids` or with the `inbox queue` filters plus `--expected-count`,
+the total the queue listing reported; the server refuses a filter whose
+selection has changed since it was listed, and caps one call at 100 items.
+The result lists `updated` ids with their new state and `skipped` ids with a
+reason; it never echoes item bodies.
 
 ## Release Guidance
 

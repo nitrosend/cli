@@ -35,6 +35,77 @@ test("inbox queue and item map to nitro_inbox read commands", async () => {
   });
 });
 
+test("inbox queue forwards every list_queue filter and the view", async () => {
+  const queue = await runWithMcp(
+    ["inbox", "queue", "--state", "quarantine", "--inbox-id", "27", "--query", "parcel", "--sender", "phish",
+      "--reason-code", "spam_fail", "--since", "2026-09-01T00:00:00Z", "--sort", "newest", "--view", "full", "--per", "100", "--json"],
+    [{ items: [], pagination: { page: 1 } }]
+  );
+  assert.equal(queue.code, 0);
+  assert.deepEqual(toolCall(queue.requests[0]), {
+    name: "nitro_inbox",
+    arguments: {
+      command: "list_queue",
+      state: "quarantine",
+      inbox_id: 27,
+      query: "parcel",
+      sender: "phish",
+      reason_code: "spam_fail",
+      since: "2026-09-01T00:00:00Z",
+      sort: "newest",
+      view: "full",
+      per: 100
+    }
+  });
+});
+
+test("inbox triage acts on an id list or on a filter with expected_count", async () => {
+  const byIds = await runWithMcp(
+    ["inbox", "triage", "mark-handled", "--ids", "12, 15,19", "--idempotency-key", "triage-1", "--json"],
+    [{ command: "mark_handled", status: "ok", updated: [], skipped: [] }]
+  );
+  assert.equal(byIds.code, 0);
+  assert.deepEqual(toolCall(byIds.requests[0]), {
+    name: "nitro_inbox_action",
+    arguments: { command: "mark_handled", action_item_ids: [12, 15, 19], idempotency_key: "triage-1" }
+  });
+
+  const byFilter = await runWithMcp(
+    ["inbox", "triage", "classify-spam", "--state", "quarantine", "--reason-code", "spam_fail", "--expected-count", "17",
+      "--idempotency-key", "triage-2", "--json"],
+    [{ command: "classify_spam", status: "ok", updated: [], skipped: [] }]
+  );
+  assert.equal(byFilter.code, 0);
+  assert.deepEqual(toolCall(byFilter.requests[0]), {
+    name: "nitro_inbox_action",
+    arguments: {
+      command: "classify_spam",
+      classification: "spam",
+      filter: { state: "quarantine", reason_code: "spam_fail" },
+      expected_count: 17,
+      idempotency_key: "triage-2"
+    }
+  });
+
+  const defaultState = await runWithMcp(
+    ["inbox", "triage", "mark-handled", "--expected-count", "3", "--idempotency-key", "triage-3", "--json"],
+    [{ command: "mark_handled", status: "ok", updated: [], skipped: [] }]
+  );
+  assert.equal(defaultState.code, 0);
+  assert.deepEqual(toolCall(defaultState.requests[0]), {
+    name: "nitro_inbox_action",
+    arguments: { command: "mark_handled", filter: {}, expected_count: 3, idempotency_key: "triage-3" }
+  });
+
+  const missingCount = await runWithMcp(["inbox", "triage", "mark-handled", "--state", "quarantine", "--machine"], []);
+  assert.notEqual(missingCount.code, 0);
+  assert.equal(missingCount.requests.length, 0);
+
+  const both = await runWithMcp(["inbox", "triage", "mark-handled", "--ids", "1", "--state", "quarantine", "--machine"], []);
+  assert.notEqual(both.code, 0);
+  assert.equal(both.requests.length, 0);
+});
+
 test("inbox reply fails closed without typed confirmation", async () => {
   const result = await runWithMcp(
     ["inbox", "reply", "123", "--body", "Send this", "--machine"],

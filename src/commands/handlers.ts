@@ -89,6 +89,8 @@ export async function executeCommand(
       return inboxReplyCommand(execution, runtime, meta);
     case "inbox action":
       return inboxActionCommand(execution, runtime, meta);
+    case "inbox triage":
+      return inboxTriageCommand(execution, runtime, meta);
     case "update":
       return commandResult("update", await updateData(), { meta, presentation: { type: "key_value" } });
     case "describe":
@@ -135,10 +137,12 @@ async function inboxQueueCommand(
 ): Promise<CommandResult> {
   const page = integerFlag(execution.flags, "page");
   const per = integerFlag(execution.flags, "per") ?? integerFlag(execution.flags, "limit");
-  const state = flagString(execution.flags, "state");
+  const view = flagString(execution.flags, "view");
   const result = await callMcpResult(runtime, "nitro_inbox", {
     command: "list_queue",
-    ...(state ? { state } : {}),
+    ...queueFilterArguments(execution.flags),
+    ...optionalString("sort", flagString(execution.flags, "sort")),
+    ...optionalString("view", view),
     ...(page !== undefined ? { page } : {}),
     ...(per !== undefined ? { per } : {})
   });
@@ -153,9 +157,27 @@ async function inboxQueueCommand(
     meta,
     presentation: {
       type: "table",
-      columns: tableColumnsFor("inbox_queue", rows)
+      columns: tableColumnsFor(view === "full" ? "inbox_queue_full" : "inbox_queue", rows)
     }
   });
+}
+
+// The list_queue filter flags, shared by `inbox queue` and `inbox triage` so
+// a filter that lists is the same filter that acts.
+function queueFilterArguments(flags: Record<string, string | boolean>): Record<string, unknown> {
+  const inboxId = integerFlag(flags, "inbox-id");
+  return {
+    ...optionalString("state", flagString(flags, "state")),
+    ...(inboxId !== undefined ? { inbox_id: inboxId } : {}),
+    ...optionalString("query", flagString(flags, "query") || flagString(flags, "search")),
+    ...optionalString("sender", flagString(flags, "sender")),
+    ...optionalString("reason_code", flagString(flags, "reason-code")),
+    ...optionalString("since", flagString(flags, "since"))
+  };
+}
+
+function optionalString(key: string, value: string | undefined): Record<string, string> {
+  return value ? { [key]: value } : {};
 }
 
 async function inboxListCommand(
@@ -168,12 +190,14 @@ async function inboxListCommand(
   const query = flagString(execution.flags, "query") || flagString(execution.flags, "search");
   const status = flagString(execution.flags, "status");
   const inboxId = integerFlag(execution.flags, "inbox-id");
+  const view = flagString(execution.flags, "view");
 
   const result = await callMcpResult(runtime, "nitro_inbox", {
     command: "list_mailbox",
     ...(query ? { query } : {}),
     ...(status ? { status } : {}),
     ...(inboxId !== undefined ? { inbox_id: inboxId } : {}),
+    ...optionalString("view", view),
     ...(page !== undefined ? { page } : {}),
     ...(per !== undefined ? { per } : {})
   });
@@ -188,7 +212,7 @@ async function inboxListCommand(
     meta,
     presentation: {
       type: "table",
-      columns: tableColumnsFor("inbox", rows)
+      columns: tableColumnsFor(view === "full" ? "inbox_full" : "inbox", rows)
     }
   });
 }
@@ -299,6 +323,64 @@ async function inboxActionCommand(
     meta,
     presentation: { type: "key_value" }
   });
+}
+
+const INBOX_TRIAGE_ACTIONS = new Set([...INBOX_FEEDBACK_ACTIONS, "classify_spam", "classify_not_spam"]);
+
+async function inboxTriageCommand(
+  execution: CommandExecution,
+  runtime: RuntimeOptions,
+  meta: CommandMeta
+): Promise<CommandResult> {
+  const verb = execution.rest[0]?.replace(/-/g, "_");
+  if (!verb || !INBOX_TRIAGE_ACTIONS.has(verb)) {
+    throw new CliError("Disposition must be one of: mark-handled, request-human, release-to-agent, mark-quarantine, classify-spam, classify-not-spam.", {
+      code: "invalid_inbox_action",
+      exitCodeName: "usage"
+    });
+  }
+
+  const ids = flagString(execution.flags, "ids");
+  const filter = queueFilterArguments(execution.flags);
+  const expectedCount = integerFlag(execution.flags, "expected-count");
+  const byIds = ids !== undefined;
+  const byFilter = expectedCount !== undefined || Object.keys(filter).length > 0;
+  if (byIds === byFilter) {
+    throw new CliError("Select items with --ids, or with queue filters plus --expected-count; not both and not neither.", {
+      code: "invalid_inbox_selection",
+      exitCodeName: "usage",
+      nextAction: "Pass `--ids 1,2,3`, or `--expected-count <n>` with optional filters such as `--state quarantine --reason-code spam_fail`."
+    });
+  }
+
+  // An empty filter is valid: the server applies its default state
+  // (needs_attention), exactly as `inbox queue` with no flags does.
+  const selection = byIds
+    ? { action_item_ids: ids.split(",").map((value) => integerArgument(value.trim(), "ids")) }
+    : { filter, expected_count: requireExpectedCount(expectedCount) };
+  const classification = verb.startsWith("classify_") ? { classification: verb.replace("classify_", "") } : {};
+
+  const result = await callMcpResult(runtime, "nitro_inbox_action", {
+    command: verb.startsWith("classify_") ? "classify_spam" : verb,
+    ...classification,
+    ...selection,
+    idempotency_key: commandIdempotencyKey(runtime)
+  });
+
+  return commandResult("inbox triage", result, {
+    meta,
+    presentation: { type: "key_value" }
+  });
+}
+
+function requireExpectedCount(value: number | undefined): number {
+  if (value === undefined) {
+    throw new CliError("Filter selection requires --expected-count, the total inbox queue reported for the same filters.", {
+      code: "missing_expected_count",
+      exitCodeName: "usage"
+    });
+  }
+  return value;
 }
 
 async function contactsImportCommand(
@@ -1046,8 +1128,10 @@ function tableColumnsFor(entity: string, rows: Array<Record<string, unknown>>) {
     lists: ["id", "name", "contact_count", "created_at"],
     templates: ["id", "name", "subject", "created_at"],
     suppressions: ["id", "email", "reason", "source_provider", "provider_diagnostic", "created_at"],
-    inbox: ["conversation_id", "subject", "external_participant_address", "status", "last_message_at"],
-    inbox_queue: ["action_item_id", "state", "priority", "reason_codes", "preview", "last_inbound_at"]
+    inbox: ["conversation_id", "subject", "sender", "status", "last_message_at"],
+    inbox_full: ["conversation_id", "subject", "external_participant_address", "status", "last_message_at"],
+    inbox_queue: ["action_item_id", "state", "reason_codes", "sender", "subject", "inbox_address", "last_inbound_at"],
+    inbox_queue_full: ["action_item_id", "state", "priority", "reason_codes", "preview", "last_inbound_at"]
   };
   const keys = preferred[entity] || Object.keys(rows[0] || {}).slice(0, 6);
   return keys.map((key) => ({ key, label: humanLabel(key) }));
