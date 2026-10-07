@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AuthContext } from "../auth.js";
 import { createTraceStore, runWithTraceStore } from "../runtime/trace.js";
+import { CURRENT_VERSION } from "../version/current.js";
 import { VersionGate } from "../version/gate.js";
 import { McpClient } from "./client.js";
 
@@ -29,6 +30,24 @@ test("sends direct HTTP JSON-RPC requests", async () => {
   const result = await client.listTools();
   assert.deepEqual(result, { tools: [] });
   assert.equal(JSON.parse(requestBody).method, "tools/list");
+});
+
+test("identifies MCP requests with the versioned CLI User-Agent", async () => {
+  let headers = new Headers();
+  const client = new McpClient({
+    auth,
+    fetcher: async (_url, init) => {
+      headers = new Headers(init?.headers);
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { tools: [] } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.listTools();
+  assert.equal(headers.get("user-agent"), `nitrosend-cli/${CURRENT_VERSION}`);
+  assert.equal(headers.get("authorization"), "Bearer nskey_test_abc123");
 });
 
 test("surfaces JSON-RPC errors", async () => {

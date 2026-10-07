@@ -5,6 +5,9 @@ import { ExitCodeName } from "./contracts/exit-codes.js";
 import { CliError } from "./errors.js";
 import { redact } from "./redact.js";
 import { recordTrace } from "./runtime/trace.js";
+import { CURRENT_VERSION } from "./version/current.js";
+
+const USER_AGENT = `nitrosend-cli/${CURRENT_VERSION}`;
 
 export interface HttpTextResponse {
   url: string;
@@ -31,10 +34,12 @@ export async function fetchText(
   const fetcher = options.fetcher ?? fetch;
   const method = init.method || "GET";
   const name = options.name || `${method} ${new URL(url).host}`;
+  const headers = new Headers(init.headers);
+  headers.set("User-Agent", USER_AGENT);
   const startedAt = performance.now();
 
   try {
-    const response = await fetcher(url, init);
+    const response = await fetcher(url, { ...init, headers });
     const text = await response.text();
     const contentType = response.headers.get("content-type") || "";
     recordTrace({

@@ -3,7 +3,28 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { uploadContactsImport } from "./http.js";
+import { fetchJson, uploadContactsImport } from "./http.js";
+import { CURRENT_VERSION } from "./version/current.js";
+
+const USER_AGENT = `nitrosend-cli/${CURRENT_VERSION}`;
+
+test("fetchJson identifies the CLI with a versioned User-Agent and keeps caller headers", async () => {
+  let headers = new Headers();
+  const fetcher = async (_url: string | URL | Request, init?: RequestInit) => {
+    headers = new Headers(init?.headers);
+    return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+
+  await fetchJson("https://api.example.test/oauth/token", {
+    method: "POST",
+    headers: { Authorization: "Bearer nskey_test_abc" }
+  }, { fetcher: fetcher as typeof fetch });
+
+  assert.match(USER_AGENT, /^nitrosend-cli\/\d+\.\d+\.\d+/);
+  assert.equal(headers.get("user-agent"), USER_AGENT);
+  assert.equal(headers.get("authorization"), "Bearer nskey_test_abc");
+  assert.equal(headers.get("accept"), "application/json");
+});
 
 test("uploadContactsImport performs Active Storage direct upload then creates import", async () => {
   const dir = await mkdtemp(join(tmpdir(), "nitrosend-import-"));
@@ -71,6 +92,7 @@ test("uploadContactsImport performs Active Storage direct upload then creates im
       ["PUT", "https://s3.example.test/upload"],
       ["POST", "https://api.example.test/v1/my/imports"]
     ]);
+    assert.deepEqual(calls.map((call) => call.headers["user-agent"]), [USER_AGENT, USER_AGENT, USER_AGENT]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
