@@ -172,10 +172,12 @@ See [`docs/ux-contract.md`](docs/ux-contract.md) for the full UX contract.
 Project-level defaults can live in `.nitrosend.yml`:
 
 ```yaml
-profile: sandbox
-environment: sandbox
+profile: default
+environment: production
 output: json
 ```
+
+`environment` is a local label: `production`, `staging`, `sandbox`, or `development` (the default). The CLI shows it on command results and in `meta.environment`, and `production` makes every destructive command ask for a typed confirmation. It is not a sandbox. It does not change the endpoint, account, or brand, and commands send real mail under every label, `sandbox` included.
 
 Environment variables:
 

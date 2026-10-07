@@ -46,9 +46,10 @@ temporary failures use `75`, permission/auth failures use `77`, and
 
 ### HTTP response classification
 
-All networked commands use the shared HTTP transport. The transport classifies
-connection failures, HTTP failures, and malformed bodies before command-specific
-parsing runs:
+All networked commands use the shared HTTP transport. Every request it sends
+carries `User-Agent: nitrosend-cli/<version>`, where `<version>` is the
+installed package version. The transport classifies connection failures, HTTP
+failures, and malformed bodies before command-specific parsing runs:
 
 - Network/DNS/timeout failures use `69` with `code: "network_error"`.
 - HTTP `401`/`403` use `77` with `code: "authentication_failed"`, even when the
@@ -154,11 +155,15 @@ defaults. It must never contain secrets. Non-default environment labels are
 shown on command results, and destructive production targets require an extra
 typed confirmation.
 
+The environment is a local label only. It does not change the endpoint,
+account, or brand, and there is no sandbox behind it: commands send real mail
+under every label, `sandbox` included.
+
 Example:
 
 ```yaml
-profile: sandbox
-environment: sandbox
+profile: default
+environment: production
 output: json
 ```
 
