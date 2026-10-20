@@ -2,9 +2,9 @@ import { createServer } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { URL } from "node:url";
-import { currentProfile, defaultApiUrl, deleteCurrentProfile, Profile, storeProfile } from "./config.js";
+import { currentProfile, defaultApiUrl, deleteCurrentProfile, namedProfile, Profile, storeProfile } from "./config.js";
 import { CliError } from "./errors.js";
-import { fetchJson } from "./http.js";
+import { fetchJson, fetchText, httpError, parseJsonBody, restApiBase } from "./http.js";
 
 export interface AuthContext {
   token: string;
@@ -39,20 +39,19 @@ export async function resolveAuth(profileName?: string): Promise<AuthContext> {
     return { token: apiKey, tokenType: "api_key", apiUrl: defaultApiUrl(), source: "env" };
   }
 
-  const profile = await currentProfile();
+  // A named profile (--profile, or profile: in .nitrosend.yml) is used as
+  // named; otherwise the one last logged in.
+  const profile = profileName ? await namedProfile(profileName) : await currentProfile();
   if (!profile) {
-    throw new CliError("Not logged in. Run `nitrosend login --api-key ...` or set NITROSEND_API_KEY.", {
-      code: "not_authenticated",
-      exitCodeName: "permission",
-      nextAction: "Run `nitrosend login --api-key ...` or set NITROSEND_API_KEY."
-    });
-  }
-
-  if (profileName && profile.name !== profileName) {
-    throw new CliError(`Profile ${profileName} is not active. Profile switching will be added after bootstrap.`, {
-      code: "profile_not_active",
-      exitCodeName: "permission"
-    });
+    const login = profileName ? `nitrosend login --profile ${profileName} --api-key ...` : "nitrosend login --api-key ...";
+    throw new CliError(
+      profileName ? `Profile ${profileName} is not logged in. Run \`${login}\`.` : "Not logged in. Run `nitrosend login --api-key ...` or set NITROSEND_API_KEY.",
+      {
+        code: "not_authenticated",
+        exitCodeName: "permission",
+        nextAction: profileName ? `Run \`${login}\`.` : "Run `nitrosend login --api-key ...` or set NITROSEND_API_KEY."
+      }
+    );
   }
 
   return {
@@ -80,6 +79,66 @@ export async function loginWithApiKey(apiKey: string, options: { profile: string
   };
   await storeProfile(profile);
   return profile;
+}
+
+export interface SignupOptions {
+  email: string;
+  password: string;
+  profile: string;
+  apiUrl?: string;
+  attribution?: Record<string, string>;
+  fetcher?: typeof fetch;
+}
+
+/**
+ * Creates an account through the REST signup, then an API key for its brand,
+ * and stores that key as the profile: the account an agent can make without a
+ * browser. The session token signup returns is used for the key and never kept.
+ */
+export async function signupWithPassword(options: SignupOptions): Promise<Profile> {
+  const apiUrl = options.apiUrl || defaultApiUrl();
+  const base = restApiBase(apiUrl);
+  const json = { "Accept": "application/json", "Content-Type": "application/json" };
+
+  const signup = await fetchText(`${base}/v1/signup`, {
+    method: "POST",
+    headers: json,
+    body: JSON.stringify({
+      user: {
+        email: options.email,
+        password: options.password,
+        ...(options.attribution && Object.keys(options.attribution).length > 0
+          ? { attribution_context: options.attribution }
+          : {})
+      }
+    })
+  }, { fetcher: options.fetcher, name: "POST signup", service: "Nitrosend API", bodyPreview: "never" });
+  if (!signup.ok) throw httpError(signup, parseJsonBody<unknown>(signup));
+
+  const session = signup.headers.get("authorization");
+  if (!session?.startsWith("Bearer ")) {
+    throw new CliError("Signup succeeded but returned no session token.", {
+      code: "signup_session_missing",
+      exitCodeName: "data",
+      nextAction: "Sign in at https://app.nitrosend.com and create an API key, then run `nitrosend login --api-key ...`."
+    });
+  }
+
+  const key = await fetchJson<{ secret_key?: string; api_key?: { secret_key?: string } }>(`${base}/v1/my/api_keys`, {
+    method: "POST",
+    headers: { ...json, "Authorization": session },
+    body: JSON.stringify({ name: "Nitrosend CLI" })
+  }, { fetcher: options.fetcher, name: "POST create API key", service: "Nitrosend API", bodyPreview: "never" });
+  const secret = key.secret_key ?? key.api_key?.secret_key;
+  if (!secret) {
+    throw new CliError("The account was created but no API key secret came back.", {
+      code: "api_key_secret_missing",
+      exitCodeName: "data",
+      nextAction: "Create a key under Settings > API Keys at https://app.nitrosend.com, then run `nitrosend login --api-key ...`."
+    });
+  }
+
+  return loginWithApiKey(secret, { profile: options.profile, apiUrl });
 }
 
 export async function logout(): Promise<string | null> {

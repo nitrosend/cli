@@ -169,7 +169,7 @@ export async function uploadContactsImport(options: DirectImportOptions): Promis
   }, { fetcher: options.fetcher, name: "POST create import", service: "Nitrosend API" });
 }
 
-function restApiBase(apiUrl: string): string {
+export function restApiBase(apiUrl: string): string {
   const url = new URL(apiUrl);
   url.pathname = url.pathname.replace(/\/mcp\/?$/, "");
   url.search = "";

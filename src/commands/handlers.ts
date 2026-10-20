@@ -1,5 +1,5 @@
 import { parseArgs, flagBoolean, flagString } from "../args.js";
-import { loginWithApiKey, loginWithOAuth, logout, resolveAuth } from "../auth.js";
+import { loginWithApiKey, loginWithOAuth, logout, resolveAuth, signupWithPassword } from "../auth.js";
 import { readCache, writeCache } from "../cache/cache.js";
 import { currentProfile, defaultApiUrl } from "../config.js";
 import { COMMAND_DESCRIPTORS, commandNames, findDescriptor } from "../contracts/descriptors.js";
@@ -39,10 +39,15 @@ const ENTITY_COMMANDS: Record<string, { entity: string; title: string; searchFil
   "suppressions list": { entity: "suppressions", title: "Suppressions" }
 };
 
+export interface CommandIo {
+  stdin?: NodeJS.ReadableStream;
+}
+
 export async function executeCommand(
   execution: CommandExecution,
   runtime: RuntimeOptions,
-  projectContext: ProjectContext
+  projectContext: ProjectContext,
+  io: CommandIo = {}
 ) {
   const meta: CommandMeta = {
     environment: projectContext.environment,
@@ -62,6 +67,16 @@ export async function executeCommand(
     }
     case "login":
       return commandResult("login", await loginCommand(execution.rest, execution.flags, runtime), { meta });
+    case "signup":
+      return commandResult("signup", await signupCommand(execution.flags, runtime, io), {
+        meta,
+        presentation: { type: "key_value" }
+      });
+    case "send":
+      return commandResult("send", await sendCommand(execution.flags, runtime), {
+        meta,
+        presentation: { type: "key_value" }
+      });
     case "logout": {
       const profile = await logout();
       return commandResult("logout", { profile, status: profile ? "logged_out" : "no_active_profile" }, { meta });
@@ -495,6 +510,93 @@ async function loginCommand(
   return { profile: saved.name, auth: "oauth", apiUrl: saved.apiUrl };
 }
 
+async function signupCommand(
+  flags: Record<string, string | boolean>,
+  runtime: RuntimeOptions,
+  io: CommandIo
+): Promise<Record<string, unknown>> {
+  const email = flagString(flags, "email");
+  if (!email) {
+    throw new CliError("Signup requires --email.", {
+      code: "missing_email",
+      exitCodeName: "usage",
+      nextAction: "Run `printf '%s' \"$PASSWORD\" | nitrosend signup --email <email> --password-stdin`."
+    });
+  }
+  if (!flagBoolean(flags, "password-stdin")) {
+    throw new CliError("Signup reads the password from stdin only.", {
+      code: "password_stdin_required",
+      exitCodeName: "usage",
+      nextAction: "Pipe the password: `printf '%s' \"$PASSWORD\" | nitrosend signup --email <email> --password-stdin`."
+    });
+  }
+  const password = (await readAll(io.stdin ?? process.stdin)).replace(/\r?\n$/, "");
+  if (!password) {
+    throw new CliError("No password arrived on stdin.", { code: "missing_password", exitCodeName: "usage" });
+  }
+
+  const attribution = Object.fromEntries(
+    [["utm_source", "utm-source"], ["utm_medium", "utm-medium"], ["utm_campaign", "utm-campaign"]]
+      .map(([key, flag]) => [key, flagString(flags, flag)])
+      .filter((entry): entry is [string, string] => Boolean(entry[1]))
+  );
+  const profile = await signupWithPassword({
+    email,
+    password,
+    profile: runtime.profile || "default",
+    apiUrl: runtime.apiUrl,
+    attribution
+  });
+  return {
+    profile: profile.name,
+    auth: "api_key",
+    apiUrl: profile.apiUrl,
+    next_action: "Run `nitrosend status` for the account's next steps."
+  };
+}
+
+async function sendCommand(
+  flags: Record<string, string | boolean>,
+  runtime: RuntimeOptions
+): Promise<Record<string, unknown>> {
+  const to = flagString(flags, "to");
+  const channel = flagString(flags, "channel") || "email";
+  const subject = flagString(flags, "subject");
+  const body = flagString(flags, "body");
+  const templateId = flagString(flags, "template-id");
+  if (!to) {
+    throw new CliError("Send requires --to.", { code: "missing_recipient", exitCodeName: "usage" });
+  }
+  if (channel !== "email" && channel !== "sms") {
+    throw new CliError("--channel must be email or sms.", { code: "invalid_channel", exitCodeName: "usage" });
+  }
+  if (channel === "email" && !templateId && (!subject || !body)) {
+    throw new CliError("An email needs --subject and --body, or --template-id.", {
+      code: "missing_email_content",
+      exitCodeName: "usage"
+    });
+  }
+  if (channel === "sms" && !body) {
+    throw new CliError("An SMS needs --body.", { code: "missing_sms_body", exitCodeName: "usage" });
+  }
+
+  return callMcpResult(runtime, "nitro_send_message", {
+    channel,
+    to,
+    ...(subject ? { subject } : {}),
+    ...(body ? { body } : {}),
+    ...(templateId ? { template_id: integerArgument(templateId, "template-id") } : {}),
+    idempotency_key: commandIdempotencyKey(runtime),
+    dry_run: runtime.dryRun
+  });
+}
+
+async function readAll(stream: NodeJS.ReadableStream): Promise<string> {
+  let text = "";
+  for await (const chunk of stream) text += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+  return text;
+}
+
 async function whoamiData(runtime: RuntimeOptions): Promise<Record<string, unknown>> {
   const auth = await resolveAuth(runtime.profile);
   const profile = auth.source === "profile" ? await currentProfile() : null;
@@ -865,7 +967,7 @@ function replayExecutionFor(command: string):
   const parsed = parseArgs(argv);
   const resolved = resolveExecution(parsed.positionals);
   const execution: CommandExecution = { ...resolved, flags: parsed.flags };
-  if (["redo", "login", "logout", "approve", "reject"].includes(execution.commandName)) {
+  if (["redo", "login", "signup", "logout", "approve", "reject"].includes(execution.commandName)) {
     return { allowed: false, reason: `${execution.commandName} is not replayable` };
   }
 

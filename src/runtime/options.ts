@@ -50,7 +50,14 @@ const GLOBAL_FLAGS = new Set([
   "body",
   "html",
   "test-to",
-  "idempotency-key"
+  "idempotency-key",
+  "to",
+  "channel",
+  "template-id",
+  "password-stdin",
+  "utm-source",
+  "utm-medium",
+  "utm-campaign"
 ]);
 
 export function runtimeOptions(flags: Record<string, string | boolean>): RuntimeOptions {
@@ -76,6 +83,22 @@ export function runtimeOptions(flags: Record<string, string | boolean>): Runtime
     idempotencyKey: flagString(flags, "idempotency-key"),
     profile: flagString(flags, "profile"),
     apiUrl: flagString(flags, "api-url")
+  };
+}
+
+// .nitrosend.yml supplies the profile, API URL and output a project uses; a
+// flag still wins.
+export function withProjectDefaults(
+  runtime: RuntimeOptions,
+  flags: Record<string, string | boolean>,
+  project: { profile?: string; apiUrl?: string; output?: OutputMode }
+): RuntimeOptions {
+  const outputFlagged = ["machine", "json", "ndjson", "csv"].some((flag) => flagBoolean(flags, flag));
+  return {
+    ...runtime,
+    profile: runtime.profile || project.profile,
+    apiUrl: runtime.apiUrl || project.apiUrl,
+    outputMode: outputFlagged || !project.output ? runtime.outputMode : project.output
   };
 }
 

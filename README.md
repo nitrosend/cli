@@ -67,6 +67,15 @@ stable key. Real replies and test sends require typed conversation confirmation;
 
 ### Send and automate
 
+Send one email (or SMS with `--channel sms`) from your account's sender:
+
+```bash
+nitrosend send --to you@example.com --subject 'Hello' --body 'First send.'
+nitrosend send --to you@example.com --subject 'Hello' --body 'First send.' --dry-run
+```
+
+`send` calls `nitro_send_message` with an idempotency key, so a retry with the same `--idempotency-key` never sends twice.
+
 The CLI exposes the full Nitrosend MCP surface — every tool an AI agent can call, you can call too:
 
 ```bash
@@ -116,7 +125,17 @@ nitrosend status
 nitrosend login --api-key nskey_live_...
 ```
 
+No account yet? Create one without a browser. The password is read from stdin, never from a flag:
+
+```bash
+printf '%s' "$PASSWORD" | nitrosend signup --email you@example.com --password-stdin
+```
+
+It creates the account, makes an API key for it, and stores that key as your profile.
+
 `NITROSEND_BEARER_TOKEN` and `NITROSEND_API_KEY` always take precedence over stored profiles. `nitrosend logout` removes the active profile.
+
+Pass `--profile <name>` to `login`, `signup` or any command to keep several accounts side by side. A project's `.nitrosend.yml` can name one with `profile: <name>`, and its commands use that profile unless a flag says otherwise.
 
 Profiles live under your platform config directory (or `NITROSEND_CONFIG_DIR` if set), with directory permissions locked to your user. On shared machines, prefer the env-var form.
 

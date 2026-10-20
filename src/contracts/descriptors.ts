@@ -35,6 +35,19 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     agent: { suitable: true, reason: "Use --api-key for non-interactive login. Browser OAuth login is human-facing." }
   },
   {
+    name: "signup",
+    group: "auth",
+    summary: "Create a Nitrosend account without a browser, then store an API-key profile for it.",
+    usage: "nitrosend signup --email <email> --password-stdin [--utm-source <s>] [--utm-medium <m>] [--utm-campaign <c>] [--api-url <url>] [--profile <name>]",
+    input_schema: objectSchema,
+    output_schema: objectSchema,
+    examples: [{ description: "Sign up with a password from stdin", command: "printf '%s' \"$PASSWORD\" | nitrosend signup --email you@example.com --password-stdin" }],
+    safety: { class: "external-effect", supports_dry_run: false, requires_confirmation: false },
+    cache: { mode: "none" },
+    idempotency: { mode: "none" },
+    agent: { suitable: true, reason: "The password is read from stdin, never from a flag." }
+  },
+  {
     name: "logout",
     group: "auth",
     summary: "Remove the active local profile.",
@@ -73,6 +86,22 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     idempotency: { mode: "none" },
 	    agent: { suitable: true }
 	  },
+  {
+    name: "send",
+    group: "messages",
+    summary: "Send one transactional email or SMS now from the account's sender.",
+    usage: "nitrosend send --to <recipient> (--subject <text> --body <text>|--template-id <id>) [--channel email|sms] [--idempotency-key <key>] [--dry-run]",
+    input_schema: objectSchema,
+    output_schema: objectSchema,
+    examples: [
+      { description: "Send one email", command: "nitrosend send --to you@example.com --subject 'Hello' --body 'First send.'" },
+      { description: "Validate a send without sending", command: "nitrosend send --to you@example.com --subject 'Hello' --body 'First send.' --dry-run" }
+    ],
+    safety: { class: "external-effect", supports_dry_run: true, requires_confirmation: false },
+    cache: { mode: "none" },
+    idempotency: { mode: "auto" },
+    agent: { suitable: true, reason: "Calls nitro_send_message; a retry with the same --idempotency-key never sends twice." }
+  },
   {
     name: "contacts import",
     group: "contacts",
