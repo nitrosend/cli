@@ -94,6 +94,11 @@ export async function currentProfile(path = configPath()): Promise<Profile | nul
   return config.profiles[config.currentProfile] ?? null;
 }
 
+export async function namedProfile(name: string, path = configPath()): Promise<Profile | null> {
+  const config = await loadConfig(path);
+  return config.profiles[name] ?? null;
+}
+
 export async function configExists(path = configPath()): Promise<boolean> {
   try {
     await access(path, constants.R_OK);

@@ -1,11 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, parse } from "node:path";
+import { OutputMode } from "../contracts/types.js";
 import { CliError } from "../errors.js";
 
 export interface ProjectContext {
   path?: string;
   profile?: string;
-  output?: string;
+  output?: OutputMode;
   environment: "production" | "staging" | "sandbox" | "development";
   color: "red" | "yellow" | "green" | "blue";
   apiUrl?: string;
@@ -28,7 +29,7 @@ export async function loadProjectContext(cwd = process.cwd()): Promise<ProjectCo
   return {
     path,
     profile: parsed.profile,
-    output: parsed.output,
+    output: outputValue(parsed.output),
     environment,
     color: colorValue(parsed.color) ?? ENV_COLORS[environment],
     apiUrl: parsed.api_url || parsed.apiUrl
@@ -88,6 +89,11 @@ function environmentValue(value: string | undefined): ProjectContext["environmen
     return value;
   }
   return "development";
+}
+
+function outputValue(value: string | undefined): OutputMode | undefined {
+  if (value === "tty" || value === "json" || value === "ndjson" || value === "csv") return value;
+  return undefined;
 }
 
 function colorValue(value: string | undefined): ProjectContext["color"] | undefined {

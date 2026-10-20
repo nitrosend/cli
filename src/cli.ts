@@ -8,7 +8,7 @@ import { recordHistory } from "./history.js";
 import { renderError, renderResult } from "./renderers/index.js";
 import { redact } from "./redact.js";
 import { helpText } from "./runtime/help.js";
-import { assertKnownFlags, runtimeOptions } from "./runtime/options.js";
+import { assertKnownFlags, runtimeOptions, withProjectDefaults } from "./runtime/options.js";
 import { resolveExecution } from "./runtime/resolve.js";
 import { createTraceStore, renderTraceLines, runWithTraceStore, traceMeta, TraceStore } from "./runtime/trace.js";
 import { RuntimeOptions } from "./runtime/types.js";
@@ -51,6 +51,8 @@ export async function runCli(options: RunOptions): Promise<number> {
       }
 
       projectContext = await loadProjectContext(options.cwd);
+      activeRuntime = withProjectDefaults(activeRuntime, parsed.flags, projectContext);
+      runtime = activeRuntime;
       const execution = { ...resolveExecution(parsed.positionals), flags: parsed.flags };
       parsedCommand = execution.commandName;
       if (execution.descriptor.idempotency.mode === "auto" && !activeRuntime.idempotencyKey) {
@@ -74,7 +76,7 @@ export async function runCli(options: RunOptions): Promise<number> {
         stdout: process.stderr
       });
 
-      const result = await executeCommand(execution, activeRuntime, projectContext);
+      const result = await executeCommand(execution, activeRuntime, projectContext, { stdin: options.stdin });
       result.meta.duration_ms = Math.round(performance.now() - startedAt);
       result.meta.trace = traceMeta(traceStore, result.meta.duration_ms);
       if (activeRuntime.trace) stderr.write(redact(renderTraceLines(result.meta.trace)));
