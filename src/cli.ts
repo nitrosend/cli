@@ -7,7 +7,7 @@ import { errorEnvelope, exitCodeFor } from "./errors.js";
 import { recordHistory } from "./history.js";
 import { renderError, renderResult } from "./renderers/index.js";
 import { redact } from "./redact.js";
-import { helpText } from "./runtime/help.js";
+import { commandHelpText, helpText } from "./runtime/help.js";
 import { assertKnownFlags, runtimeOptions, withProjectDefaults } from "./runtime/options.js";
 import { resolveExecution } from "./runtime/resolve.js";
 import { createTraceStore, renderTraceLines, runWithTraceStore, traceMeta, TraceStore } from "./runtime/trace.js";
@@ -41,7 +41,7 @@ export async function runCli(options: RunOptions): Promise<number> {
 
     return await runWithTraceStore(traceStore, async () => {
       if (flagBoolean(parsed.flags, "help")) {
-        stdout.write(helpText());
+        stdout.write(parsed.positionals.length > 0 ? commandHelpText(resolveExecution(parsed.positionals).descriptor) : helpText());
         return EXIT_CODES.ok;
       }
 

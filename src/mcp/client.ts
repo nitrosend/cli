@@ -99,13 +99,31 @@ export class McpClient {
       throw httpError(response, payload);
     }
 
-    if (payload.error) {
-      throw new CliError(payload.error.message, {
-        code: "mcp_json_rpc_error",
-        exitCodeName: "data"
-      });
-    }
+    if (payload.error) throw rpcError(payload.error.message);
 
     return payload.result ?? null;
   }
+}
+
+// The server lists only the tools an account can use, so a command whose tool
+// is missing names the feature the account lacks instead of a bare RPC error.
+const TOOL_FEATURES: Record<string, string> = {
+  nitro_inbox: "the agent inbox",
+  nitro_inbox_action: "the agent inbox"
+};
+
+export function rpcError(message: string): CliError {
+  const missing = message.match(/^Tool not found: (\S+)/)?.[1];
+  if (!missing) return new CliError(message, { code: "mcp_json_rpc_error", exitCodeName: "data" });
+  const feature = TOOL_FEATURES[missing];
+  return new CliError(
+    feature
+      ? `This account does not have ${feature} enabled, so this command cannot run.`
+      : `This account cannot use ${missing}.`,
+    {
+      code: "tool_unavailable",
+      exitCodeName: "data",
+      nextAction: "Run `nitrosend mcp tools list` to see the tools this account has."
+    }
+  );
 }

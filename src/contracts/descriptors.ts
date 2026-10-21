@@ -1,16 +1,17 @@
 import { CommandDescriptor } from "./types.js";
+import { parseUsage, UsageFlag, usageInputSchema } from "./usage.js";
+
+type DeclaredCommand = Omit<CommandDescriptor, "input_schema">;
 
 const objectSchema = { type: "object", additionalProperties: true };
-const emptySchema = { type: "object", properties: {}, additionalProperties: false };
 
-export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
+const DECLARED_COMMANDS: DeclaredCommand[] = [
   {
     name: "dashboard",
     aliases: [""],
     group: "core",
     summary: "Show local profile state, cached account state, blockers, and suggested next actions.",
     usage: "nitrosend",
-    input_schema: emptySchema,
     output_schema: objectSchema,
     examples: [{ description: "Show the dashboard", command: "nitrosend" }],
     safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
@@ -23,7 +24,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "auth",
     summary: "Store an API-key profile, or start browser OAuth when no API key is provided.",
     usage: "nitrosend login [--api-key <key>] [--no-browser] [--api-url <url>] [--profile <name>]",
-    input_schema: objectSchema,
     output_schema: objectSchema,
     examples: [
       { description: "Log in with API key", command: "nitrosend login --api-key nskey_test_..." },
@@ -39,7 +39,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "auth",
     summary: "Create a Nitrosend account without a browser, then store an API-key profile for it.",
     usage: "nitrosend signup --email <email> --password-stdin [--utm-source <s>] [--utm-medium <m>] [--utm-campaign <c>] [--api-url <url>] [--profile <name>]",
-    input_schema: objectSchema,
     output_schema: objectSchema,
     examples: [{ description: "Sign up with a password from stdin", command: "printf '%s' \"$PASSWORD\" | nitrosend signup --email you@example.com --password-stdin" }],
     safety: { class: "external-effect", supports_dry_run: false, requires_confirmation: false },
@@ -52,7 +51,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "auth",
     summary: "Remove the active local profile.",
     usage: "nitrosend logout",
-    input_schema: emptySchema,
     output_schema: objectSchema,
     examples: [{ description: "Log out", command: "nitrosend logout" }],
     safety: { class: "local-state", supports_dry_run: false, requires_confirmation: false },
@@ -65,7 +63,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "auth",
     summary: "Show active auth source, profile, and API endpoint.",
     usage: "nitrosend whoami [--json]",
-    input_schema: emptySchema,
     output_schema: objectSchema,
     examples: [{ description: "Show profile", command: "nitrosend whoami" }],
     safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
@@ -78,7 +75,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "core",
     summary: "Show live authenticated account health, onboarding state, and next actions.",
     usage: "nitrosend status [--json]",
-    input_schema: emptySchema,
     output_schema: objectSchema,
     examples: [{ description: "Show account status", command: "nitrosend status" }],
     safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
@@ -91,7 +87,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "messages",
     summary: "Send one transactional email or SMS now from the account's sender.",
     usage: "nitrosend send --to <recipient> (--subject <text> --body <text>|--template-id <id>) [--channel email|sms] [--idempotency-key <key>] [--dry-run]",
-    input_schema: objectSchema,
     output_schema: objectSchema,
     examples: [
       { description: "Send one email", command: "nitrosend send --to you@example.com --subject 'Hello' --body 'First send.'" },
@@ -107,7 +102,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "contacts",
     summary: "Direct-upload a CSV file and create a contact import.",
     usage: "nitrosend contacts import <file> --list-id <id> [--json]",
-    input_schema: objectSchema,
     output_schema: objectSchema,
     examples: [{ description: "Import contacts into a list", command: "nitrosend contacts import ./contacts.csv --list-id 88" }],
     safety: { class: "mutating", supports_dry_run: true, requires_confirmation: false },
@@ -122,7 +116,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "core",
     summary: "Return descriptor, schemas, examples, and safety metadata for a command.",
     usage: "nitrosend describe <command> [--json]",
-    input_schema: objectSchema,
     output_schema: objectSchema,
     examples: [{ description: "Describe a command", command: "nitrosend describe mcp tools list --json" }],
     safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
@@ -135,7 +128,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "core",
     summary: "Generate shell completion for bash, zsh, or fish.",
     usage: "nitrosend completion <bash|zsh|fish>",
-    input_schema: objectSchema,
     output_schema: { type: "string" },
     examples: [{ description: "Generate zsh completion", command: "nitrosend completion zsh" }],
     safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
@@ -148,7 +140,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "core",
     summary: "Show redacted recent commands.",
     usage: "nitrosend recent [--json]",
-    input_schema: emptySchema,
     output_schema: objectSchema,
     examples: [{ description: "Show history", command: "nitrosend recent" }],
     safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
@@ -161,7 +152,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "core",
     summary: "Show or re-run a recent command.",
     usage: "nitrosend redo [index] [--explain]",
-    input_schema: objectSchema,
     output_schema: objectSchema,
     examples: [{ description: "Explain last command", command: "nitrosend redo 1 --explain" }],
     safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
@@ -174,7 +164,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "release",
     summary: "Show CLI version and runtime details.",
     usage: "nitrosend version [--json]",
-    input_schema: emptySchema,
     output_schema: objectSchema,
     examples: [{ description: "Show version details", command: "nitrosend version --json" }],
     safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
@@ -187,7 +176,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "release",
     summary: "Show update guidance for the installed CLI.",
     usage: "nitrosend update [--json]",
-    input_schema: emptySchema,
     output_schema: objectSchema,
     examples: [{ description: "Show update command", command: "nitrosend update" }],
     safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
@@ -201,7 +189,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "fixtures",
     summary: "Exercise destructive safety UX without touching live Nitrosend data.",
     usage: "nitrosend fixture destroy <name> --confirm <name>",
-    input_schema: objectSchema,
     output_schema: objectSchema,
     examples: [{ description: "Preview fixture destruction", command: "nitrosend fixture destroy demo --dry-run" }],
     safety: {
@@ -219,7 +206,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "agent",
     summary: "Approve a pending agent operation token.",
     usage: "nitrosend approve <token>",
-    input_schema: objectSchema,
     output_schema: objectSchema,
     examples: [{ description: "Approve a token", command: "nitrosend approve tok_..." }],
     safety: { class: "external-effect", supports_dry_run: false, requires_confirmation: false },
@@ -232,7 +218,6 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     group: "agent",
     summary: "Reject a pending agent operation token.",
     usage: "nitrosend reject <token>",
-    input_schema: objectSchema,
     output_schema: objectSchema,
     examples: [{ description: "Reject a token", command: "nitrosend reject tok_..." }],
     safety: { class: "external-effect", supports_dry_run: false, requires_confirmation: false },
@@ -241,6 +226,59 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     agent: { suitable: true }
   }
 ];
+
+// Each command's input schema is read from its usage line, so the parser, the
+// known-flag check, help, `describe` and the docs reference cannot drift apart.
+export const COMMAND_DESCRIPTORS: CommandDescriptor[] = DECLARED_COMMANDS.map((command) => ({
+  ...command,
+  input_schema: usageInputSchema(parseUsage(command.usage, usageCommandWords(command)))
+}));
+
+// Flags every command takes, read by the runtime before the command runs.
+export const GLOBAL_OPTIONS: UsageFlag[] = [
+  { name: "help", type: "boolean", description: "Print usage; after a command, that command's usage and examples." },
+  { name: "version", type: "boolean", description: "Print the CLI version." },
+  { name: "json", type: "boolean", description: "Print the JSON result envelope." },
+  { name: "ndjson", type: "boolean", description: "Print newline-delimited JSON." },
+  { name: "csv", type: "boolean", description: "Print rows as CSV." },
+  { name: "machine", type: "boolean", description: "Agent mode: implies --json --non-interactive --no-color --no-pager." },
+  { name: "non-interactive", type: "boolean", description: "Never prompt; fail closed when input would be needed." },
+  { name: "no-color", type: "boolean", description: "Strip ANSI colour." },
+  { name: "no-pager", type: "boolean", description: "Never page output." },
+  { name: "dry-run", type: "boolean", description: "Validate without side effects, where the command supports it." },
+  { name: "yes", type: "boolean", description: "Skip ordinary confirmations; never a typed confirmation." },
+  { name: "explain", type: "boolean", description: "Return the resolved plan as data and run nothing." },
+  { name: "trace", type: "boolean", description: "Write timing diagnostics to stderr." },
+  { name: "profile", type: "string", placeholder: "<name>", description: "Use this stored profile." },
+  { name: "api-url", type: "string", placeholder: "<url>", description: "Use this MCP endpoint." }
+];
+
+// Older spellings still accepted: --limit for --per, --list for --list-id, --json-args for --args.
+export const FLAG_ALIASES: Record<string, string> = { limit: "per", list: "list-id", "json-args": "args" };
+
+export const KNOWN_FLAGS: Map<string, UsageFlag> = knownFlags();
+
+function knownFlags(): Map<string, UsageFlag> {
+  const flags = new Map<string, UsageFlag>();
+  const commandFlags = COMMAND_DESCRIPTORS.flatMap((command) => parseUsage(command.usage, usageCommandWords(command)).flags);
+  for (const flag of [...GLOBAL_OPTIONS, ...commandFlags]) {
+    const known = flags.get(flag.name);
+    if (known && known.type !== flag.type) {
+      throw new Error(`--${flag.name} is a boolean in one usage and takes a value in another`);
+    }
+    if (!known) flags.set(flag.name, flag);
+  }
+  for (const [alias, name] of Object.entries(FLAG_ALIASES)) {
+    const target = flags.get(name);
+    if (!target) throw new Error(`Flag alias --${alias} names no flag --${name}`);
+    flags.set(alias, { ...target, name: alias });
+  }
+  return flags;
+}
+
+function usageCommandWords(command: DeclaredCommand): string {
+  return command.usage === "nitrosend" ? "" : command.name;
+}
 
 export function findDescriptor(commandName: string): CommandDescriptor | undefined {
   return COMMAND_DESCRIPTORS.find((descriptor) => {
@@ -252,10 +290,9 @@ export function commandNames(): string[] {
   return COMMAND_DESCRIPTORS.map((descriptor) => descriptor.name).filter(Boolean).sort();
 }
 
-function mcpDescriptors(): CommandDescriptor[] {
+function mcpDescriptors(): DeclaredCommand[] {
   const base = {
     group: "mcp",
-    input_schema: objectSchema,
     output_schema: objectSchema,
     safety: { class: "read", supports_dry_run: false, requires_confirmation: false } as const,
     cache: { mode: "none" as const },
@@ -266,18 +303,18 @@ function mcpDescriptors(): CommandDescriptor[] {
   return [
     ["mcp initialize", "Initialize MCP handshake.", "nitrosend mcp initialize [--json]"],
     ["mcp tools list", "List MCP tools.", "nitrosend mcp tools list [--json]"],
-    ["mcp tools call", "Call an MCP tool.", "nitrosend mcp tools call <name> --args '{...}'"],
+    ["mcp tools call", "Call an MCP tool.", "nitrosend mcp tools call <name> [--args '{...}']"],
     ["mcp resources list", "List MCP resources.", "nitrosend mcp resources list [--json]"],
     ["mcp resources read", "Read an MCP resource.", "nitrosend mcp resources read <uri>"],
     ["mcp prompts list", "List MCP prompts.", "nitrosend mcp prompts list [--json]"],
-    ["mcp prompts get", "Get an MCP prompt.", "nitrosend mcp prompts get <name> --args '{...}'"]
+    ["mcp prompts get", "Get an MCP prompt.", "nitrosend mcp prompts get <name> [--args '{...}']"]
   ].map(([name, summary, usage]) => {
     const descriptor = {
       ...base,
       name,
       summary,
       usage,
-      examples: [{ description: summary, command: usage.replace(" [--json]", "") }]
+      examples: [{ description: summary, command: usage.replace(" [--json]", "").replace(/[[\]]/g, "") }]
     };
 
     if (name === "mcp tools call") {
@@ -295,20 +332,19 @@ function mcpDescriptors(): CommandDescriptor[] {
   });
 }
 
-function entityListDescriptors(): CommandDescriptor[] {
+function entityListDescriptors(): DeclaredCommand[] {
   return [
     ["flows list", "List flows.", "nitrosend flows list [--status <status>] [--search <text>] [--page <n>] [--per <n>]", "nitrosend flows list --status draft --per 10"],
     ["campaigns list", "List campaigns.", "nitrosend campaigns list [--status <status>] [--search <text>] [--page <n>] [--per <n>]", "nitrosend campaigns list --status draft --per 10"],
     ["contacts list", "List contacts.", "nitrosend contacts list [--query <text>] [--list-id <id>] [--page <n>] [--per <n>]", "nitrosend contacts list --query alice --per 10"],
     ["lists list", "List contact lists.", "nitrosend lists list [--search <text>] [--page <n>] [--per <n>]", "nitrosend lists list --search newsletter"],
     ["templates list", "List templates.", "nitrosend templates list [--search <text>] [--page <n>] [--per <n>]", "nitrosend templates list --search welcome"],
-    ["suppressions list", "List account suppressions with bounce diagnostics.", "nitrosend suppressions list [--email <email>] [--reason <reason>] [--active <true|false>] [--page <n>] [--per <n>]", "nitrosend suppressions list --reason hard_bounce --per 10"]
+    ["suppressions list", "List account suppressions with bounce diagnostics.", "nitrosend suppressions list [--email <email>] [--reason <reason>] [--source-provider <provider>] [--active <true|false>] [--page <n>] [--per <n>]", "nitrosend suppressions list --reason hard_bounce --per 10"]
   ].map(([name, summary, usage, example]) => ({
     name,
     group: "data",
     summary,
     usage,
-    input_schema: objectSchema,
     output_schema: objectSchema,
     examples: [{ description: summary, command: example }],
     safety: { class: "read", supports_dry_run: false, requires_confirmation: false } as const,
@@ -318,14 +354,13 @@ function entityListDescriptors(): CommandDescriptor[] {
   }));
 }
 
-function inboxDescriptors(): CommandDescriptor[] {
+function inboxDescriptors(): DeclaredCommand[] {
   return [
     {
       name: "inbox list",
       group: "inbox",
       summary: "List and search mailbox conversations.",
       usage: "nitrosend inbox list [--query <text>] [--inbox-id <id>] [--status <status>] [--view compact|full] [--page <n>] [--per <n>]",
-      input_schema: objectSchema,
       output_schema: objectSchema,
       examples: [{ description: "Search inbox conversations", command: "nitrosend inbox list --query sourcey --per 10" }],
       safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
@@ -338,7 +373,6 @@ function inboxDescriptors(): CommandDescriptor[] {
       group: "inbox",
       summary: "List prioritized inbox action items as compact rows.",
       usage: "nitrosend inbox queue [--state <state>] [--inbox-id <id>] [--query <text>] [--sender <text>] [--reason-code <code>] [--since <iso8601>] [--sort queue|newest] [--view compact|full] [--page <n>] [--per <n>]",
-      input_schema: objectSchema,
       output_schema: objectSchema,
       examples: [
         { description: "List items needing attention", command: "nitrosend inbox queue --state needs_attention --per 10" },
@@ -354,7 +388,6 @@ function inboxDescriptors(): CommandDescriptor[] {
       group: "inbox",
       summary: "Read one sanitized agent inbox thread.",
       usage: "nitrosend inbox get <conversation-id>",
-      input_schema: objectSchema,
       output_schema: objectSchema,
       examples: [{ description: "Read a thread", command: "nitrosend inbox get 123" }],
       safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
@@ -367,7 +400,6 @@ function inboxDescriptors(): CommandDescriptor[] {
       group: "inbox",
       summary: "Read one prioritized inbox action item and its bounded thread context.",
       usage: "nitrosend inbox item <action-item-id>",
-      input_schema: objectSchema,
       output_schema: objectSchema,
       examples: [{ description: "Read a queue item", command: "nitrosend inbox item 456" }],
       safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
@@ -380,7 +412,6 @@ function inboxDescriptors(): CommandDescriptor[] {
       group: "inbox",
       summary: "Reply to a conversation, or send the reply draft to a test recipient.",
       usage: "nitrosend inbox reply <conversation-id> (--body <text>|--html <html>) [--subject <text>] [--test-to <email>] [--idempotency-key <key>] [--dry-run] --confirm <conversation-id>",
-      input_schema: objectSchema,
       output_schema: objectSchema,
       examples: [{ description: "Validate a reply without sending", command: "nitrosend inbox reply 123 --body 'Thanks, we will follow up.' --dry-run" }],
       safety: {
@@ -398,7 +429,6 @@ function inboxDescriptors(): CommandDescriptor[] {
       group: "inbox",
       summary: "Apply a handled, human, agent, or quarantine disposition to a queue item.",
       usage: "nitrosend inbox action <action-item-id> <mark-handled|request-human|release-to-agent|mark-quarantine> [--idempotency-key <key>]",
-      input_schema: objectSchema,
       output_schema: objectSchema,
       examples: [{ description: "Mark a queue item handled", command: "nitrosend inbox action 456 mark-handled" }],
       safety: { class: "mutating", supports_dry_run: false, requires_confirmation: false },
@@ -411,7 +441,6 @@ function inboxDescriptors(): CommandDescriptor[] {
       group: "inbox",
       summary: "Apply one disposition to many queue items, by id list or by the same filters as inbox queue.",
       usage: "nitrosend inbox triage <mark-handled|request-human|release-to-agent|mark-quarantine|classify-spam|classify-not-spam> (--ids <id,id,...> | [--state <state>] [--inbox-id <id>] [--query <text>] [--sender <text>] [--reason-code <code>] [--since <iso8601>] --expected-count <n>) [--idempotency-key <key>]",
-      input_schema: objectSchema,
       output_schema: objectSchema,
       examples: [
         { description: "Handle three items", command: "nitrosend inbox triage mark-handled --ids 12,15,19" },

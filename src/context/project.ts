@@ -7,12 +7,15 @@ export interface ProjectContext {
   path?: string;
   profile?: string;
   output?: OutputMode;
-  environment: "production" | "staging" | "sandbox" | "development";
+  // A local label the project sets in .nitrosend.yml; absent unless it does.
+  environment?: Environment;
   color: "red" | "yellow" | "green" | "blue";
   apiUrl?: string;
 }
 
-const ENV_COLORS: Record<ProjectContext["environment"], ProjectContext["color"]> = {
+type Environment = "production" | "staging" | "sandbox" | "development";
+
+const ENV_COLORS: Record<Environment, ProjectContext["color"]> = {
   production: "red",
   staging: "yellow",
   sandbox: "green",
@@ -31,16 +34,13 @@ export async function loadProjectContext(cwd = process.cwd()): Promise<ProjectCo
     profile: parsed.profile,
     output: outputValue(parsed.output),
     environment,
-    color: colorValue(parsed.color) ?? ENV_COLORS[environment],
+    color: colorValue(parsed.color) ?? (environment ? ENV_COLORS[environment] : "blue"),
     apiUrl: parsed.api_url || parsed.apiUrl
   };
 }
 
 export function defaultProjectContext(): ProjectContext {
-  return {
-    environment: "development",
-    color: "blue"
-  };
+  return { color: "blue" };
 }
 
 async function findProjectConfig(start: string): Promise<string | null> {
@@ -84,11 +84,11 @@ function parseSimpleYaml(raw: string, path: string): Record<string, string> {
   return values;
 }
 
-function environmentValue(value: string | undefined): ProjectContext["environment"] {
+function environmentValue(value: string | undefined): Environment | undefined {
   if (value === "production" || value === "staging" || value === "sandbox" || value === "development") {
     return value;
   }
-  return "development";
+  return undefined;
 }
 
 function outputValue(value: string | undefined): OutputMode | undefined {

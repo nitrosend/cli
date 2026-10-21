@@ -1,3 +1,4 @@
+import { KNOWN_FLAGS } from "./contracts/descriptors.js";
 import { CliError } from "./errors.js";
 
 export interface ParsedArgs {
@@ -19,10 +20,10 @@ export function parseArgs(args: string[]): ParsedArgs {
     if (arg.startsWith("--")) {
       const [name, inlineValue] = arg.slice(2).split(/=(.*)/s, 2);
       if (!name) throw new CliError(`Invalid flag ${arg}`);
-      if (inlineValue !== undefined && inlineValue !== "") {
+      if (isBooleanFlag(name)) {
+        flags[name] = booleanValue(name, inlineValue);
+      } else if (inlineValue !== undefined && inlineValue !== "") {
         flags[name] = inlineValue;
-      } else if (isBooleanFlag(name)) {
-        flags[name] = true;
       } else {
         const next = args[i + 1];
         if (!next || next.startsWith("--")) throw new CliError(`Missing value for --${name}`);
@@ -46,21 +47,13 @@ export function flagBoolean(flags: ParsedArgs["flags"], name: string): boolean {
   return flags[name] === true;
 }
 
+// A boolean flag is any flag a usage line writes without a value.
 function isBooleanFlag(name: string): boolean {
-  return [
-    "help",
-    "version",
-    "json",
-    "ndjson",
-    "csv",
-    "no-browser",
-    "no-color",
-    "no-pager",
-    "non-interactive",
-    "machine",
-    "trace",
-    "dry-run",
-    "yes",
-    "explain"
-  ].includes(name);
+  return KNOWN_FLAGS.get(name)?.type === "boolean";
+}
+
+function booleanValue(name: string, inlineValue: string | undefined): boolean {
+  if (inlineValue === undefined || inlineValue === "true") return true;
+  if (inlineValue === "false") return false;
+  throw new CliError(`--${name} takes no value`, { code: "invalid_flag_value", exitCodeName: "usage" });
 }

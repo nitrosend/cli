@@ -786,7 +786,7 @@ function dashboardFromStatus(
   return {
     data: {
       profile: authState.profile || projectContext.profile || "default",
-      environment: dashboardEnvironment(projectContext),
+      environment: projectContext.environment,
       project_config: projectContext.path || null,
       status_source: options.source,
       auth: authState,
@@ -800,6 +800,7 @@ function dashboardFromStatus(
       },
       provider: pick(provider, ["name", "configured", "domain_verified"]),
       brand_subdomain: pick(brandSubdomain, [
+        "namespace_status",
         "status",
         "ready",
         "selected",
@@ -810,6 +811,7 @@ function dashboardFromStatus(
         "local_part",
         "local_part_editable",
         "fqdn_changeable",
+        "suggested_subdomain",
         "next_retry_at",
         "failure_code"
       ]),
@@ -844,7 +846,7 @@ function minimalDashboard(projectContext: ProjectContext, authState: Record<stri
   return {
     data: {
       profile: authState.profile || projectContext.profile || "default",
-      environment: dashboardEnvironment(projectContext),
+      environment: projectContext.environment,
       project_config: projectContext.path || null,
       status_source: "local",
       auth: pick(authState, ["source", "profile", "apiUrl"])
@@ -871,10 +873,6 @@ function nextDashboardAction(blockers: string[]): string {
   }
   if (blockers.length > 0) return "Run `nitrosend status --json` for setup details.";
   return "Run `nitrosend flows list` or `nitrosend contacts list`.";
-}
-
-function dashboardEnvironment(projectContext: ProjectContext): string | undefined {
-  return projectContext.environment === "development" ? undefined : projectContext.environment;
 }
 
 function describeCommand(rest: string[]): CommandDescriptor | Record<string, unknown> {

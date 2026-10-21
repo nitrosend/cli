@@ -152,9 +152,9 @@ the npm registry and returns `up_to_date`, `update_available`, or `unknown`.
 The CLI walks up from the current working directory looking for
 `.nitrosend.yml`. This file may define profile, output, API URL, and environment
 defaults; a `--profile`, `--api-url` or output flag overrides the file. It must
-never contain secrets. Non-default environment labels are
-shown on command results, and destructive production targets require an extra
-typed confirmation.
+never contain secrets. An environment label is shown on command results and in
+`meta.environment` only when the file sets one, and destructive production
+targets require an extra typed confirmation.
 
 The environment is a local label only. It does not change the endpoint,
 account, or brand, and there is no sandbox behind it: commands send real mail

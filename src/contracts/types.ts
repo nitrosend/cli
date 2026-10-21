@@ -19,8 +19,12 @@ export interface JsonSchemaLike {
   type?: string;
   properties?: Record<string, unknown>;
   required?: string[];
+  oneOf?: JsonSchemaLike[];
   additionalProperties?: boolean;
   items?: unknown;
+  prefixItems?: JsonSchemaLike[];
+  minItems?: number;
+  maxItems?: number;
   enum?: unknown[];
   description?: string;
 }

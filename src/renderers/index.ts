@@ -204,7 +204,7 @@ function omitRecordKeys(data: unknown, keys: string[]): unknown {
 }
 
 function displayEnvironment(environment: string | undefined): string {
-  return environment && environment !== "development" ? ` [${environment}]` : "";
+  return environment ? ` [${environment}]` : "";
 }
 
 function titleize(value: string): string {

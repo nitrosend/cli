@@ -145,7 +145,12 @@ export async function logout(): Promise<string | null> {
   return deleteCurrentProfile();
 }
 
-export async function loginWithOAuth(options: { profile: string; apiUrl?: string; openBrowser?: boolean }): Promise<Profile> {
+export async function loginWithOAuth(options: {
+  profile: string;
+  apiUrl?: string;
+  openBrowser?: boolean;
+  notice?: (text: string) => void;
+}): Promise<Profile> {
   const apiUrl = options.apiUrl || defaultApiUrl();
   const baseUrl = new URL(apiUrl).origin;
   const verifier = base64Url(randomBytes(32));
@@ -166,9 +171,16 @@ export async function loginWithOAuth(options: { profile: string; apiUrl?: string
     authorizeUrl.searchParams.set("code_challenge_method", "S256");
     authorizeUrl.searchParams.set("resource", `${baseUrl}/mcp`);
 
+    // The URL goes to stderr before the wait starts, so --no-browser, a remote
+    // shell, or a browser that never opened still has a way to sign in.
+    const notice = options.notice ?? ((text: string) => process.stderr.write(text));
     if (options.openBrowser !== false) {
       openUrl(authorizeUrl.toString());
+      notice(`Opening your browser to sign in. If it does not open, visit:\n  ${authorizeUrl}\n`);
+    } else {
+      notice(`Open this URL in a browser to sign in:\n  ${authorizeUrl}\n`);
     }
+    notice("Waiting up to 5 minutes for the sign-in to finish.\n");
 
     const code = await callback.waitForCode(authorizeUrl.toString());
     const token = await exchangeCode(metadata, {
@@ -327,10 +339,18 @@ function createCallbackServer(expectedState: string): Promise<{
 }
 
 function openUrl(url: string): void {
-  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
-  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+  const { command, args } = browserCommand(url);
   const child = spawn(command, args, { detached: true, stdio: "ignore" });
+  child.on("error", () => undefined);
   child.unref();
+}
+
+// Windows opens the URL through the shell's URL handler, never `cmd /c start`,
+// which splits the URL at every `&` and drops the OAuth parameters.
+export function browserCommand(url: string, platform: NodeJS.Platform = process.platform): { command: string; args: string[] } {
+  if (platform === "darwin") return { command: "open", args: [url] };
+  if (platform === "win32") return { command: "rundll32", args: ["url.dll,FileProtocolHandler", url] };
+  return { command: "xdg-open", args: [url] };
 }
 
 function base64Url(buffer: Buffer): string {

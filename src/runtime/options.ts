@@ -1,64 +1,11 @@
 import { flagBoolean, flagString } from "../args.js";
+import { KNOWN_FLAGS } from "../contracts/descriptors.js";
 import { OutputMode } from "../contracts/types.js";
 import { CliError } from "../errors.js";
 import { didYouMean } from "./suggestions.js";
 import { RuntimeOptions } from "./types.js";
 
-const GLOBAL_FLAGS = new Set([
-  "help",
-  "version",
-  "json",
-  "ndjson",
-  "csv",
-  "no-color",
-  "no-pager",
-  "non-interactive",
-  "machine",
-  "trace",
-  "dry-run",
-  "yes",
-  "explain",
-  "profile",
-  "api-url",
-  "api-key",
-  "args",
-  "json-args",
-  "confirm",
-  "no-browser",
-  "page",
-  "per",
-  "limit",
-  "status",
-  "search",
-  "query",
-  "list-id",
-  "list",
-  "email",
-  "reason",
-  "source-provider",
-  "active",
-  "inbox-id",
-  "state",
-  "sender",
-  "reason-code",
-  "since",
-  "sort",
-  "view",
-  "ids",
-  "expected-count",
-  "subject",
-  "body",
-  "html",
-  "test-to",
-  "idempotency-key",
-  "to",
-  "channel",
-  "template-id",
-  "password-stdin",
-  "utm-source",
-  "utm-medium",
-  "utm-campaign"
-]);
+
 
 export function runtimeOptions(flags: Record<string, string | boolean>): RuntimeOptions {
   const machine = flagBoolean(flags, "machine");
@@ -104,8 +51,8 @@ export function withProjectDefaults(
 
 export function assertKnownFlags(flags: Record<string, string | boolean>): void {
   for (const flag of Object.keys(flags)) {
-    if (GLOBAL_FLAGS.has(flag)) continue;
-    const suggestion = didYouMean(flag, [...GLOBAL_FLAGS]);
+    if (KNOWN_FLAGS.has(flag)) continue;
+    const suggestion = didYouMean(flag, [...KNOWN_FLAGS.keys()]);
     throw new CliError(`Unknown flag --${flag}${suggestion ? `. Did you mean --${suggestion}?` : ""}`, {
       code: "unknown_flag",
       exitCodeName: "usage"

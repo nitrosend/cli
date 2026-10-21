@@ -22,14 +22,14 @@ nitrosend flows list       # your flows
 nitrosend campaigns list   # your campaigns
 ```
 
-Add `--json` to any command for a machine-readable envelope. `nitrosend describe <command>` returns the full input/output schema for any command.
+Add `--json` to any command for a machine-readable envelope. `nitrosend <command> --help` prints a command's usage and examples, and `nitrosend describe <command> --json` returns its input schema (every flag, its type and allowed values, and which are required), safety class and examples.
 
 ## What you can do
 
 ### Inspect
 
 ```bash
-nitrosend whoami                # active profile + endpoint
+nitrosend whoami                # active profile + the MCP endpoint the CLI calls
 nitrosend status                # live account, billing, preflight checks
 nitrosend flows list            # --status --search --page --per
 nitrosend campaigns list
@@ -74,7 +74,7 @@ nitrosend send --to you@example.com --subject 'Hello' --body 'First send.'
 nitrosend send --to you@example.com --subject 'Hello' --body 'First send.' --dry-run
 ```
 
-`send` calls `nitro_send_message` with an idempotency key, so a retry with the same `--idempotency-key` never sends twice.
+`send` calls `nitro_send_message`, which requires an idempotency key. The CLI makes one for each run; pass your own `--idempotency-key` to retry the same send safely, since a retry with the same key never sends twice.
 
 The CLI exposes the full Nitrosend MCP surface — every tool an AI agent can call, you can call too:
 
@@ -111,6 +111,8 @@ OAuth (browser-based) is the default:
 ```bash
 nitrosend login
 ```
+
+It opens your browser and prints the sign-in URL to stderr. With `--no-browser` it only prints the URL, for a remote shell or another device.
 
 For CI or headless environments, use an API key — either as an environment variable (nothing written to disk):
 
@@ -149,7 +151,7 @@ Every command returns the same envelope under `--json`:
   "ok": true,
   "command": "flows list",
   "data": { "rows": [ ... ] },
-  "meta": { "duration_ms": 142, "environment": "production" },
+  "meta": { "duration_ms": 142 },
   "presentation": { "type": "table" }
 }
 ```
@@ -196,7 +198,7 @@ environment: production
 output: json
 ```
 
-`environment` is a local label: `production`, `staging`, `sandbox`, or `development` (the default). The CLI shows it on command results and in `meta.environment`, and `production` makes every destructive command ask for a typed confirmation. It is not a sandbox. It does not change the endpoint, account, or brand, and commands send real mail under every label, `sandbox` included.
+`environment` is a local label: `production`, `staging`, `sandbox`, or `development`, and there is none unless the file sets one. The CLI shows it on command results and in `meta.environment`, and `production` makes every destructive command ask for a typed confirmation. It is not a sandbox. It does not change the endpoint, account, or brand, and commands send real mail under every label, `sandbox` included.
 
 Environment variables:
 
