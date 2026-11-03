@@ -86,7 +86,7 @@ const DECLARED_COMMANDS: DeclaredCommand[] = [
     name: "send",
     group: "messages",
     summary: "Send one transactional email or SMS now from the account's sender.",
-    usage: "nitrosend send --to <recipient> (--subject <text> --body <text>|--template-id <id>) [--channel email|sms] [--idempotency-key <key>] [--dry-run]",
+    usage: "nitrosend send --to <recipient> (--subject <text> --body <text>|--template-id <id>) [--cc <addresses>] [--bcc <addresses>] [--channel email|sms] [--idempotency-key <key>] [--dry-run]",
     output_schema: objectSchema,
     examples: [
       { description: "Send one email", command: "nitrosend send --to you@example.com --subject 'Hello' --body 'First send.'" },
@@ -411,7 +411,7 @@ function inboxDescriptors(): DeclaredCommand[] {
       name: "inbox reply",
       group: "inbox",
       summary: "Reply to a conversation, or send the reply draft to a test recipient.",
-      usage: "nitrosend inbox reply <conversation-id> (--body <text>|--html <html>) [--subject <text>] [--test-to <email>] [--idempotency-key <key>] [--dry-run] --confirm <conversation-id>",
+      usage: "nitrosend inbox reply <conversation-id> (--body <text>|--html <html>) [--subject <text>] [--reply-all] [--cc <addresses>] [--bcc <addresses>] [--test-to <email>] [--idempotency-key <key>] [--dry-run] --confirm <conversation-id>",
       output_schema: objectSchema,
       examples: [{ description: "Validate a reply without sending", command: "nitrosend inbox reply 123 --body 'Thanks, we will follow up.' --dry-run" }],
       safety: {

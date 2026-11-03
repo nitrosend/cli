@@ -296,6 +296,7 @@ async function inboxReplyCommand(
 
   const subject = flagString(execution.flags, "subject");
   const testTo = flagString(execution.flags, "test-to");
+  const copies = emailCopies(execution.flags);
   const result = await callMcpResult(runtime, "nitro_inbox_action", {
     command: testTo ? "send_reply_test" : "send_reply",
     conversation_id: conversationId,
@@ -303,6 +304,8 @@ async function inboxReplyCommand(
     ...(body ? { body } : {}),
     ...(html ? { html } : {}),
     ...(testTo ? { to: [testTo] } : {}),
+    ...copies,
+    ...(flagBoolean(execution.flags, "reply-all") ? { reply_all: true } : {}),
     reply_context_digest: replyContextDigest,
     idempotency_key: commandIdempotencyKey(runtime),
     dry_run: runtime.dryRun
@@ -583,12 +586,18 @@ async function sendCommand(
   return callMcpResult(runtime, "nitro_send_message", {
     channel,
     to,
+    ...emailCopies(flags),
     ...(subject ? { subject } : {}),
     ...(body ? { body } : {}),
     ...(templateId ? { template_id: integerArgument(templateId, "template-id") } : {}),
     idempotency_key: commandIdempotencyKey(runtime),
     dry_run: runtime.dryRun
   });
+}
+
+function emailCopies(flags: Record<string, string | boolean>): Record<string, string[]> {
+  return Object.fromEntries(["cc", "bcc"].filter((field) => flagString(flags, field) !== undefined)
+    .map((field) => [field, flagString(flags, field)!.split(",").map((value) => value.trim()).filter(Boolean)]));
 }
 
 async function readAll(stream: NodeJS.ReadableStream): Promise<string> {

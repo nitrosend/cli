@@ -25,13 +25,15 @@ test("send maps its flags to nitro_send_message with an idempotency key", async 
 
 test("send passes --dry-run and a given idempotency key through", async () => {
   const result = await run(
-    ["send", "--to", "you@example.test", "--subject", "Hi", "--body", "x", "--dry-run", "--idempotency-key", "first-send-1", "--json"],
+    ["send", "--to", "you@example.test", "--cc", "one@example.test, two@example.test", "--bcc", "hidden@example.test", "--subject", "Hi", "--body", "x", "--dry-run", "--idempotency-key", "first-send-1", "--json"],
     [{ dry_run: true }]
   );
 
   assert.equal(result.code, 0, result.stderr);
   assert.equal(result.calls[0].arguments.dry_run, true);
   assert.equal(result.calls[0].arguments.idempotency_key, "first-send-1");
+  assert.deepEqual(result.calls[0].arguments.cc, ["one@example.test", "two@example.test"]);
+  assert.deepEqual(result.calls[0].arguments.bcc, ["hidden@example.test"]);
 });
 
 test("send refuses an email with no content before calling the server", async () => {
