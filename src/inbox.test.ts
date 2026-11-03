@@ -149,7 +149,7 @@ test("inbox reply dry-run fetches current context and validates without confirma
 test("inbox reply uses the existing test-send command for an explicit test recipient", async () => {
   const result = await runWithMcp(
     [
-      "inbox", "reply", "123", "--html", "<p>Draft</p>", "--test-to", "owner@example.com",
+      "inbox", "reply", "123", "--html", "<p>Draft</p>", "--reply-all", "--cc", "team@example.com", "--bcc", "records@example.com", "--test-to", "owner@example.com",
       "--idempotency-key", "reply-demo-1", "--confirm", "123", "--json"
     ],
     [
@@ -166,6 +166,9 @@ test("inbox reply uses the existing test-send command for an explicit test recip
       conversation_id: 123,
       html: "<p>Draft</p>",
       to: ["owner@example.com"],
+      cc: ["team@example.com"],
+      bcc: ["records@example.com"],
+      reply_all: true,
       reply_context_digest: "digest-123",
       idempotency_key: "reply-demo-1",
       dry_run: false
