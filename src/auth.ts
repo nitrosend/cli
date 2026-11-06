@@ -90,12 +90,12 @@ export interface SignupOptions {
   fetcher?: typeof fetch;
 }
 
-/**
- * Creates an account through the REST signup, then an API key for its brand,
- * and stores that key as the profile: the account an agent can make without a
- * browser. The session token signup returns is used for the key and never kept.
- */
-export async function signupWithPassword(options: SignupOptions): Promise<Profile> {
+export interface PendingSignup {
+  status: "verification_required";
+  next_action: string;
+}
+
+export async function signupWithPassword(options: SignupOptions): Promise<PendingSignup> {
   const apiUrl = options.apiUrl || defaultApiUrl();
   const base = restApiBase(apiUrl);
   const json = { "Accept": "application/json", "Content-Type": "application/json" };
@@ -113,7 +113,42 @@ export async function signupWithPassword(options: SignupOptions): Promise<Profil
       }
     })
   }, { fetcher: options.fetcher, name: "POST signup", service: "Nitrosend API", bodyPreview: "never" });
-  if (!signup.ok) throw httpError(signup, parseJsonBody<unknown>(signup));
+  const body = parseJsonBody<{ error_code?: string }>(signup);
+  if (signup.status === 409 && body?.error_code === "verification_required") {
+    return { status: "verification_required", next_action: "Read the verification email, then pipe JSON with token and a final password to `nitrosend signup verify --verification-stdin`. No profile has changed." };
+  }
+  if (!signup.ok) throw httpError(signup, body);
+  throw new CliError("The server did not return the required verification step. No profile has changed.", {
+    code: "signup_protocol_mismatch", exitCodeName: "data"
+  });
+}
+
+export async function resendSignupVerification(options: Pick<SignupOptions, "email" | "apiUrl" | "fetcher">): Promise<PendingSignup> {
+  await fetchJson(`${restApiBase(options.apiUrl || defaultApiUrl())}/v1/signup/resend`, {
+    method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ email: options.email })
+  }, { fetcher: options.fetcher, name: "POST signup resend", service: "Nitrosend API", bodyPreview: "never" });
+  return { status: "verification_required", next_action: "If this address is eligible, check its inbox. Run `nitrosend signup verify --verification-stdin` with JSON containing token and your final password." };
+}
+
+export async function completeSignup(options: Pick<SignupOptions, "profile" | "apiUrl" | "fetcher"> & (
+  { token: string; password: string } | { email: string; password: string }
+)): Promise<Profile> {
+  const apiUrl = options.apiUrl || defaultApiUrl();
+  const base = restApiBase(apiUrl);
+  const json = { "Accept": "application/json", "Content-Type": "application/json" };
+  const verifying = "token" in options;
+  const signup = await fetchText(`${base}/v1/signup/${verifying ? "verify" : "activate"}`, {
+    method: "POST", headers: json,
+    body: JSON.stringify(verifying ? { token: options.token, password: options.password } : { email: options.email, password: options.password })
+  }, { fetcher: options.fetcher, name: "POST signup completion", service: "Nitrosend API", bodyPreview: "never" });
+  if (!signup.ok) {
+    const error = httpError(signup, parseJsonBody<unknown>(signup));
+    throw new CliError(error.message, {
+      code: error.code, exitCode: error.exitCode, retriable: error.retriable,
+      nextAction: "If email verification already succeeded, use `nitrosend signup resume --email <email> --password-stdin` with your final password. Otherwise request a new link with `nitrosend signup resend --email <email>`."
+    });
+  }
 
   const session = signup.headers.get("authorization");
   if (!session?.startsWith("Bearer ")) {
@@ -124,7 +159,8 @@ export async function signupWithPassword(options: SignupOptions): Promise<Profil
     });
   }
 
-  const key = await fetchJson<{ secret_key?: string; api_key?: { secret_key?: string } }>(`${base}/v1/my/api_keys`, {
+  try {
+    const key = await fetchJson<{ secret_key?: string; api_key?: { secret_key?: string } }>(`${base}/v1/my/api_keys`, {
     method: "POST",
     headers: { ...json, "Authorization": session },
     body: JSON.stringify({ name: "Nitrosend CLI" })
@@ -138,7 +174,15 @@ export async function signupWithPassword(options: SignupOptions): Promise<Profil
     });
   }
 
-  return loginWithApiKey(secret, { profile: options.profile, apiUrl });
+    return await loginWithApiKey(secret, { profile: options.profile, apiUrl });
+  } catch {
+    // Neither provider error bodies nor a failed file write may reveal the
+    // short-lived session or new key. The account can be recovered separately.
+    throw new CliError("Your account is active, but its CLI profile could not be saved.", {
+      code: "signup_profile_incomplete", exitCodeName: "temporary", retriable: true,
+      nextAction: "Retry with `nitrosend signup resume --email <email> --password-stdin` using your final password and the same --profile and --api-url. Review unused keys in Settings > API Keys."
+    });
+  }
 }
 
 export async function logout(): Promise<string | null> {

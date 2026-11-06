@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
+import { readHistory } from "../history.js";
 import test from "node:test";
 import { parseArgs } from "../args.js";
 import { browserCommand, loginWithOAuth, resolveAuth } from "../auth.js";
@@ -78,7 +79,7 @@ test("the documented signup example signs up from stdin", async () => {
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     bodies.push(JSON.parse(String(init?.body)));
     if (String(url).endsWith("/v1/signup")) {
-      return new Response("{}", { status: 201, headers: { Authorization: "Bearer session-jwt" } });
+      return new Response(JSON.stringify({ error_code: "verification_required" }), { status: 409 });
     }
     return new Response(JSON.stringify({ secret_key: "nskey_live_fromsignup" }), { status: 201 });
   }) as typeof fetch;
@@ -100,12 +101,46 @@ test("the documented signup example signs up from stdin", async () => {
     assert.deepEqual(bodies[0], {
       user: { email: "you@example.com", password: "hunter2", attribution_context: { utm_source: "docs" } }
     });
-    assert.equal((await resolveAuth()).token, "nskey_live_fromsignup");
+    assert.equal(JSON.parse(io.out).data.status, "verification_required");
+    assert.equal(bodies.length, 1);
+    await assert.rejects(resolveAuth(), /Not logged in/);
   } finally {
     globalThis.fetch = previous.fetch;
     if (previous.config === undefined) delete process.env.NITROSEND_CONFIG_DIR;
     else process.env.NITROSEND_CONFIG_DIR = previous.config;
     if (previous.key !== undefined) process.env.NITROSEND_API_KEY = previous.key;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("headless verification reads secrets only from stdin and omits them from output, trace and history", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-verify-"));
+  const previous = { config: process.env.NITROSEND_CONFIG_DIR, fetch: globalThis.fetch };
+  process.env.NITROSEND_CONFIG_DIR = dir;
+  const requests: Array<{ url: string; body: unknown }> = [];
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    requests.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+    if (String(url).endsWith("/signup/verify")) return new Response('{"id":1}', { headers: { Authorization: "Bearer private-session" } });
+    return new Response('{"secret_key":"nskey_live_privatekey"}');
+  }) as typeof fetch;
+  try {
+    const io = { out: "", err: "" };
+    const code = await runCli({
+      argv: ["signup", "verify", "--verification-stdin", "--profile", "new", "--api-url", "https://api.example.test/mcp", "--json", "--trace", "--non-interactive"],
+      stdin: Readable.from([JSON.stringify({ token: "private-proof", password: "private-password" })]),
+      stdout: { write: (chunk: string) => { io.out += chunk; return true; } },
+      stderr: { write: (chunk: string) => { io.err += chunk; return true; } }, cwd: dir
+    });
+    assert.equal(code, 0, io.out + io.err);
+    assert.equal(JSON.parse(io.out).data.profile, "new");
+    assert.deepEqual(requests[0].body, { token: "private-proof", password: "private-password" });
+    assert.equal(requests.length, 2);
+    assert.doesNotMatch(io.out + io.err + JSON.stringify(await readHistory()), /private-proof|private-password|private-session|privatekey/);
+    assert.equal((await resolveAuth("new")).token, "nskey_live_privatekey");
+  } finally {
+    globalThis.fetch = previous.fetch;
+    if (previous.config === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previous.config;
     await rm(dir, { recursive: true, force: true });
   }
 });

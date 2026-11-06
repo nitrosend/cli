@@ -133,7 +133,21 @@ No account yet? Create one without a browser. The password is read from stdin, n
 printf '%s' "$PASSWORD" | nitrosend signup --email you@example.com --password-stdin
 ```
 
-It creates the account, makes an API key for it, and stores that key as your profile.
+Signup returns `verification_required` and leaves your current profile untouched. Read the verification email, then supply JSON containing its `token` and your **final** `password` through stdin:
+
+```bash
+nitrosend signup verify --verification-stdin --profile default < verification.json
+```
+
+Keep that input file private and remove it after use, or stream the JSON directly from your secret store. Do not put passwords or verification tokens in command arguments. Verification creates the account, makes an API key, and saves that key as the profile. The final password replaces the password used to start signup.
+
+If the link expires, run `nitrosend signup resend --email you@example.com`. If verification succeeded but activation, key creation or local profile storage was interrupted, resume without another email:
+
+```bash
+printf '%s' "$PASSWORD" | nitrosend signup resume --email you@example.com --password-stdin --profile default
+```
+
+Use the same `--api-url` and `--profile` throughout. Resending has a one-minute cooldown and three-per-address daily limit; global acquisition limits also apply. Respect `Retry-After` on HTTP 429. Existing API-key and browser OAuth login remain available.
 
 `NITROSEND_BEARER_TOKEN` and `NITROSEND_API_KEY` always take precedence over stored profiles. `nitrosend logout` removes the active profile.
 
