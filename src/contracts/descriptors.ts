@@ -37,7 +37,7 @@ const DECLARED_COMMANDS: DeclaredCommand[] = [
   {
     name: "signup",
     group: "auth",
-    summary: "Create a Nitrosend account without a browser, then store an API-key profile for it.",
+    summary: "Begin email-verified signup without changing the current profile.",
     usage: "nitrosend signup --email <email> --password-stdin [--utm-source <s>] [--utm-medium <m>] [--utm-campaign <c>] [--api-url <url>] [--profile <name>]",
     output_schema: objectSchema,
     examples: [{ description: "Sign up with a password from stdin", command: "printf '%s' \"$PASSWORD\" | nitrosend signup --email you@example.com --password-stdin" }],
@@ -46,6 +46,99 @@ const DECLARED_COMMANDS: DeclaredCommand[] = [
     idempotency: { mode: "none" },
     agent: { suitable: true, reason: "The password is read from stdin, never from a flag." }
   },
+  {
+    "name": "signup verify",
+    "group": "auth",
+    "summary": "Verify email, choose the final password and save an API-key profile.",
+    "usage": "nitrosend signup verify --verification-stdin [--api-url <url>] [--profile <name>]",
+    "output_schema": {
+        "type": "object",
+        "additionalProperties": true
+    },
+    "examples": [
+        {
+            "description": "Verify email, choose the final password and save an API-key profile.",
+            "command": "nitrosend signup verify --verification-stdin"
+        }
+    ],
+    "safety": {
+        "class": "external-effect",
+        "supports_dry_run": false,
+        "requires_confirmation": false
+    },
+    "cache": {
+        "mode": "none"
+    },
+    "idempotency": {
+        "mode": "none"
+    },
+    "agent": {
+        "suitable": true,
+        "reason": "Secrets are read from stdin only. Verification input is JSON containing token and password."
+    }
+},
+  {
+    "name": "signup resend",
+    "group": "auth",
+    "summary": "Request another verification email; address and global limits apply.",
+    "usage": "nitrosend signup resend --email <email> [--api-url <url>]",
+    "output_schema": {
+        "type": "object",
+        "additionalProperties": true
+    },
+    "examples": [
+        {
+            "description": "Request another verification email; address and global limits apply.",
+            "command": "nitrosend signup resend --email you@example.com"
+        }
+    ],
+    "safety": {
+        "class": "external-effect",
+        "supports_dry_run": false,
+        "requires_confirmation": false
+    },
+    "cache": {
+        "mode": "none"
+    },
+    "idempotency": {
+        "mode": "none"
+    },
+    "agent": {
+        "suitable": true,
+        "reason": "Secrets are read from stdin only. Verification input is JSON containing token and password."
+    }
+},
+  {
+    "name": "signup resume",
+    "group": "auth",
+    "summary": "Recover a verified signup after an interrupted activation or profile write.",
+    "usage": "nitrosend signup resume --email <email> --password-stdin [--api-url <url>] [--profile <name>]",
+    "output_schema": {
+        "type": "object",
+        "additionalProperties": true
+    },
+    "examples": [
+        {
+            "description": "Recover a verified signup after an interrupted activation or profile write.",
+            "command": "nitrosend signup resume --email you@example.com --password-stdin"
+        }
+    ],
+    "safety": {
+        "class": "external-effect",
+        "supports_dry_run": false,
+        "requires_confirmation": false
+    },
+    "cache": {
+        "mode": "none"
+    },
+    "idempotency": {
+        "mode": "none"
+    },
+    "agent": {
+        "suitable": true,
+        "reason": "Secrets are read from stdin only. Verification input is JSON containing token and password."
+    }
+},
   {
     name: "logout",
     group: "auth",

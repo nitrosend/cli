@@ -1,5 +1,5 @@
 import { parseArgs, flagBoolean, flagString } from "../args.js";
-import { loginWithApiKey, loginWithOAuth, logout, resolveAuth, signupWithPassword } from "../auth.js";
+import { loginWithApiKey, loginWithOAuth, logout, resolveAuth, signupWithPassword, completeSignup, resendSignupVerification } from "../auth.js";
 import { readCache, writeCache } from "../cache/cache.js";
 import { currentProfile, defaultApiUrl } from "../config.js";
 import { COMMAND_DESCRIPTORS, commandNames, findDescriptor } from "../contracts/descriptors.js";
@@ -68,7 +68,10 @@ export async function executeCommand(
     case "login":
       return commandResult("login", await loginCommand(execution.rest, execution.flags, runtime), { meta });
     case "signup":
-      return commandResult("signup", await signupCommand(execution.flags, runtime, io), {
+    case "signup verify":
+    case "signup resend":
+    case "signup resume":
+      return commandResult(execution.commandName, await signupCommand(execution.commandName, execution.flags, runtime, io), {
         meta,
         presentation: { type: "key_value" }
       });
@@ -514,10 +517,26 @@ async function loginCommand(
 }
 
 async function signupCommand(
+  command: string,
   flags: Record<string, string | boolean>,
   runtime: RuntimeOptions,
   io: CommandIo
 ): Promise<Record<string, unknown>> {
+  const options = { profile: runtime.profile || "default", apiUrl: runtime.apiUrl };
+  if (command === "signup verify") {
+    if (!flagBoolean(flags, "verification-stdin")) {
+      throw new CliError("Verification requires --verification-stdin with JSON containing token and password.", { code: "verification_stdin_required", exitCodeName: "usage" });
+    }
+    let input: unknown;
+    try { input = JSON.parse(await readAll(io.stdin ?? process.stdin)); }
+    catch { throw new CliError("Invalid verification JSON. Supply token and password through stdin.", { code: "invalid_verification_input", exitCodeName: "usage" }); }
+    if (!input || typeof input !== "object" || !("token" in input) || !("password" in input) ||
+        typeof input.token !== "string" || !input.token.trim() || typeof input.password !== "string" || !input.password) {
+      throw new CliError("Verification JSON requires non-empty token and password strings.", { code: "invalid_verification_input", exitCodeName: "usage" });
+    }
+    const saved = await completeSignup({ ...options, token: input.token.trim(), password: input.password });
+    return { profile: saved.name, auth: "api_key", apiUrl: saved.apiUrl, next_action: "Run `nitrosend status` for the account's next steps." };
+  }
   const email = flagString(flags, "email");
   if (!email) {
     throw new CliError("Signup requires --email.", {
@@ -526,6 +545,7 @@ async function signupCommand(
       nextAction: "Run `printf '%s' \"$PASSWORD\" | nitrosend signup --email <email> --password-stdin`."
     });
   }
+  if (command === "signup resend") return { ...await resendSignupVerification({ ...options, email }) };
   if (!flagBoolean(flags, "password-stdin")) {
     throw new CliError("Signup reads the password from stdin only.", {
       code: "password_stdin_required",
@@ -538,24 +558,23 @@ async function signupCommand(
     throw new CliError("No password arrived on stdin.", { code: "missing_password", exitCodeName: "usage" });
   }
 
+  if (command === "signup resume") {
+    const saved = await completeSignup({ ...options, email, password });
+    return { profile: saved.name, auth: "api_key", apiUrl: saved.apiUrl, next_action: "Run `nitrosend status` for the account's next steps." };
+  }
   const attribution = Object.fromEntries(
     [["utm_source", "utm-source"], ["utm_medium", "utm-medium"], ["utm_campaign", "utm-campaign"]]
       .map(([key, flag]) => [key, flagString(flags, flag)])
       .filter((entry): entry is [string, string] => Boolean(entry[1]))
   );
-  const profile = await signupWithPassword({
+  const pending = await signupWithPassword({
     email,
     password,
     profile: runtime.profile || "default",
     apiUrl: runtime.apiUrl,
     attribution
   });
-  return {
-    profile: profile.name,
-    auth: "api_key",
-    apiUrl: profile.apiUrl,
-    next_action: "Run `nitrosend status` for the account's next steps."
-  };
+  return { ...pending };
 }
 
 async function sendCommand(
