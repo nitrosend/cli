@@ -38,6 +38,19 @@ nitrosend lists list
 nitrosend templates list
 ```
 
+### Move contacts from a platform
+
+```bash
+nitrosend migrate sources
+nitrosend migrate prepare --provider mailchimp
+nitrosend migrate status <import-id>
+```
+
+Open the review link to authorize the source account, choose audiences, and
+approve the import in Nitrosend. The configured CLI profile authorizes the
+destination. To keep the source in sync, choose that option on its Integrations
+page. The sources command reports what is available for the selected brand.
+
 ### Agent Inbox
 
 Agent Inbox commands are thin adapters over the existing `nitro_inbox` and

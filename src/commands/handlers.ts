@@ -95,6 +95,13 @@ export async function executeCommand(
         meta,
         presentation: { type: "key_value" }
       });
+    case "migrate sources":
+    case "migrate prepare":
+    case "migrate status":
+      return commandResult(execution.commandName, await migrateCommand(execution, runtime), {
+        meta,
+        presentation: { type: "key_value" }
+      });
     case "inbox list":
       return inboxListCommand(execution, runtime, meta);
     case "inbox queue":
@@ -402,6 +409,29 @@ function requireExpectedCount(value: number | undefined): number {
     });
   }
   return value;
+}
+
+async function migrateCommand(execution: CommandExecution, runtime: RuntimeOptions) {
+  if (execution.commandName === "migrate sources") {
+    return callMcpResult(runtime, "nitro_list_import_sources", {});
+  }
+  if (execution.commandName === "migrate status") {
+    return callMcpResult(runtime, "nitro_get_provider_import", {
+      import_id: integerArgument(execution.rest[0], "import-id")
+    });
+  }
+  const provider = flagString(execution.flags, "provider");
+  if (!provider) {
+    throw new CliError("Choose a provider with --provider.", {
+      code: "missing_provider", exitCodeName: "usage",
+      nextAction: "Run `nitrosend migrate sources`."
+    });
+  }
+  const destinationListId = integerFlag(execution.flags, "list-id");
+  return callMcpResult(runtime, "nitro_prepare_provider_import", {
+    provider, idempotency_key: runtime.idempotencyKey,
+    ...(destinationListId === undefined ? {} : { destination_list_id: destinationListId })
+  });
 }
 
 async function contactsImportCommand(

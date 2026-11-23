@@ -202,6 +202,42 @@ const DECLARED_COMMANDS: DeclaredCommand[] = [
     idempotency: { mode: "none" },
     agent: { suitable: true }
   },
+  {
+    name: "migrate sources",
+    group: "contacts",
+    summary: "Show available contact migration and sync methods.",
+    usage: "nitrosend migrate sources [--json]",
+    output_schema: objectSchema,
+    examples: [{ description: "Find migration sources", command: "nitrosend migrate sources" }],
+    safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
+    cache: { mode: "none" },
+    idempotency: { mode: "none" },
+    agent: { suitable: true }
+  },
+  {
+    name: "migrate prepare",
+    group: "contacts",
+    summary: "Prepare a one-time contact import and get its browser review link.",
+    usage: "nitrosend migrate prepare --provider <name> [--list-id <id>] [--idempotency-key <key>] [--json]",
+    output_schema: objectSchema,
+    examples: [{ description: "Prepare to move from Mailchimp", command: "nitrosend migrate prepare --provider mailchimp" }],
+    safety: { class: "mutating", supports_dry_run: false, requires_confirmation: false },
+    cache: { mode: "none" },
+    idempotency: { mode: "auto" },
+    agent: { suitable: true, reason: "Returns a link for source authorization and approval in Nitrosend." }
+  },
+  {
+    name: "migrate status",
+    group: "contacts",
+    summary: "Read a migration's progress and results.",
+    usage: "nitrosend migrate status <id> [--json]",
+    output_schema: objectSchema,
+    examples: [{ description: "Read a migration", command: "nitrosend migrate status 88" }],
+    safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
+    cache: { mode: "none" },
+    idempotency: { mode: "none" },
+    agent: { suitable: true }
+  },
 	  ...entityListDescriptors(),
   ...inboxDescriptors(),
   {
