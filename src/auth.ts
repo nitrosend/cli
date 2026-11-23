@@ -382,7 +382,7 @@ function createCallbackServer(expectedState: string): Promise<{
   });
 }
 
-function openUrl(url: string): void {
+export function openUrl(url: string): void {
   const { command, args } = browserCommand(url);
   const child = spawn(command, args, { detached: true, stdio: "ignore" });
   child.on("error", () => undefined);

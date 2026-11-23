@@ -203,6 +203,31 @@ const DECLARED_COMMANDS: DeclaredCommand[] = [
     agent: { suitable: true }
   },
   {
+    name: "connect",
+    aliases: ["integrations connect"],
+    group: "integrations",
+    summary: "Open a Nitrosend integration for the selected brand.",
+    usage: "nitrosend connect [provider] [--no-browser] [--json]",
+    output_schema: objectSchema,
+    examples: [{ description: "Open HubSpot setup", command: "nitrosend connect hubspot" }],
+    safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
+    cache: { mode: "none" },
+    idempotency: { mode: "none" },
+    agent: { suitable: true, reason: "With --json, returns the scoped URL for the user to finish setup." }
+  },
+  {
+    name: "migrate",
+    group: "contacts",
+    summary: "Open the contact import options for a platform.",
+    usage: "nitrosend migrate [provider] [--no-browser] [--json]",
+    output_schema: objectSchema,
+    examples: [{ description: "Open the Mailchimp import options", command: "nitrosend migrate mailchimp" }],
+    safety: { class: "read", supports_dry_run: false, requires_confirmation: false },
+    cache: { mode: "none" },
+    idempotency: { mode: "none" },
+    agent: { suitable: true, reason: "With --json, returns the scoped URL for the user to choose and approve a method." }
+  },
+  {
     name: "migrate sources",
     group: "contacts",
     summary: "Show available contact migration and sync methods.",

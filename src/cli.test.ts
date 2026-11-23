@@ -39,6 +39,48 @@ test("describe returns descriptor data", async () => {
   assert.equal(parsed.data.safety.class, "read");
 });
 
+test("setup commands return a scoped app link over MCP and reject unexpected paths", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nitrosend-cli-setup-link-"));
+  const previousConfig = process.env.NITROSEND_CONFIG_DIR;
+  const previousFetch = globalThis.fetch;
+  process.env.NITROSEND_CONFIG_DIR = dir;
+  await writeFile(join(dir, "profiles.json"), JSON.stringify({ currentProfile: "default", profiles: {
+    default: { name: "default", apiUrl: "https://api.example.test/mcp", token: "nskey_test_abc123", tokenType: "api_key" }
+  } }));
+
+  let returnedUrl = "https://app.nitrosend.com/my/contacts/import?account_id=1&brand_id=2&migration_provider=klaviyo";
+  let called: unknown;
+  globalThis.fetch = async (_url, init) => {
+    const request = JSON.parse(String(init?.body));
+    called = request.params;
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: {
+      content: [{ type: "text", text: JSON.stringify({ result: { url: returnedUrl } }) }]
+    } }), { status: 200 });
+  };
+  try {
+    const migrate = streams();
+    assert.equal(await runCli({ argv: ["migrate", "klaviyo", "--json"], stdout: migrate.stdout, stderr: migrate.stderr }), 0);
+    assert.deepEqual(called, { name: "nitro_get_setup_link", arguments: { purpose: "migrate", provider: "klaviyo" } });
+    assert.equal(JSON.parse(migrate.stdoutText).data.url, returnedUrl);
+
+    returnedUrl = "https://app.nitrosend.com/my/integrations/new?account_id=1&brand_id=2&provider=hubspot";
+    const connect = streams();
+    assert.equal(await runCli({ argv: ["integrations", "connect", "hubspot", "--json"], stdout: connect.stdout, stderr: connect.stderr }), 0);
+    assert.deepEqual(called, { name: "nitro_get_setup_link", arguments: { purpose: "connect", provider: "hubspot" } });
+    assert.equal(JSON.parse(connect.stdoutText).data.url, returnedUrl);
+
+    returnedUrl = "https://app.nitrosend.com/my/account/billing";
+    const refused = streams();
+    assert.notEqual(await runCli({ argv: ["connect", "hubspot", "--json"], stdout: refused.stdout, stderr: refused.stderr }), 0);
+    assert.equal(JSON.parse(refused.stdoutText).error.code, "invalid_setup_link");
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousConfig === undefined) delete process.env.NITROSEND_CONFIG_DIR;
+    else process.env.NITROSEND_CONFIG_DIR = previousConfig;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("describe group names list available subcommands", async () => {
   const io = streams();
   const code = await runCli({ argv: ["describe", "campaigns", "--json"], stdout: io.stdout, stderr: io.stderr });

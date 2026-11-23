@@ -38,7 +38,19 @@ nitrosend lists list
 nitrosend templates list
 ```
 
-### Move contacts from a platform
+### Connect an integration or import contacts
+
+```bash
+nitrosend connect hubspot
+nitrosend migrate mailchimp
+nitrosend migrate klaviyo
+```
+
+These commands open the existing Nitrosend setup screen for your CLI profile’s
+brand. Complete OAuth or choose an import method in the browser. Use `--json`
+or `--no-browser` to get the link without opening a browser.
+
+For an agent that already knows the person wants a one-time import:
 
 ```bash
 nitrosend migrate sources
@@ -47,9 +59,8 @@ nitrosend migrate status <import-id>
 ```
 
 Open the review link to authorize the source account, choose audiences, and
-approve the import in Nitrosend. The configured CLI profile authorizes the
-destination. To keep the source in sync, choose that option on its Integrations
-page. The sources command reports what is available for the selected brand.
+approve the import in Nitrosend. The sources command reports what is available
+for the selected brand.
 
 ### Agent Inbox
 

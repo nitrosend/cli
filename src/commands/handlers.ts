@@ -1,5 +1,5 @@
 import { parseArgs, flagBoolean, flagString } from "../args.js";
-import { loginWithApiKey, loginWithOAuth, logout, resolveAuth, signupWithPassword, completeSignup, resendSignupVerification } from "../auth.js";
+import { loginWithApiKey, loginWithOAuth, logout, openUrl, resolveAuth, signupWithPassword, completeSignup, resendSignupVerification } from "../auth.js";
 import { readCache, writeCache } from "../cache/cache.js";
 import { currentProfile, defaultApiUrl } from "../config.js";
 import { COMMAND_DESCRIPTORS, commandNames, findDescriptor } from "../contracts/descriptors.js";
@@ -95,6 +95,9 @@ export async function executeCommand(
         meta,
         presentation: { type: "key_value" }
       });
+    case "connect":
+    case "migrate":
+      return commandResult(execution.commandName, await setupLink(execution, runtime), { meta });
     case "migrate sources":
     case "migrate prepare":
     case "migrate status":
@@ -409,6 +412,33 @@ function requireExpectedCount(value: number | undefined): number {
     });
   }
   return value;
+}
+
+async function setupLink(execution: CommandExecution, runtime: RuntimeOptions) {
+  const purpose = execution.commandName;
+  const [provider, ...extra] = execution.rest;
+  if (extra.length || (provider && !/^[a-z0-9-]{1,64}$/i.test(provider))) {
+    throw new CliError(`Use \`nitrosend ${purpose} [provider]\`.`, { code: "invalid_provider", exitCodeName: "usage" });
+  }
+
+  const result = await callMcpResult(runtime, "nitro_get_setup_link", { purpose, provider });
+  let url: URL;
+  try {
+    url = new URL(typeof result.url === "string" ? result.url : "");
+  } catch {
+    throw new CliError("Nitrosend did not return a valid setup link.", { code: "invalid_setup_link", exitCodeName: "data" });
+  }
+  const appPath = purpose === "migrate"
+    ? url.pathname === "/my/contacts/import"
+    : /^\/my\/integrations(?:\/(?:new|\d+))?$/.test(url.pathname);
+  const loopback = url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (!appPath || url.username || url.password || (url.protocol !== "https:" && !loopback)) {
+    throw new CliError("Nitrosend returned an unexpected setup link.", { code: "invalid_setup_link", exitCodeName: "data" });
+  }
+  if (process.stdout.isTTY && runtime.outputMode === "tty" && !runtime.nonInteractive && !flagBoolean(execution.flags, "no-browser")) {
+    openUrl(url.toString());
+  }
+  return result;
 }
 
 async function migrateCommand(execution: CommandExecution, runtime: RuntimeOptions) {
@@ -1106,7 +1136,7 @@ async function callMcpResult(
   args: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   const auth = await resolveAuth(runtime.profile);
-  const client = new McpClient({ auth });
+  const client = new McpClient({ auth: { ...auth, apiUrl: runtime.apiUrl || auth.apiUrl } });
   const result = checkedToolResult(await client.callTool(name, args));
   const parsed = parseToolJson<{ result?: unknown }>(result);
   const payload = parsed && "result" in parsed ? parsed.result : parsed;
